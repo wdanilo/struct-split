@@ -1,0 +1,13 @@
+[package]
+name = "struct-split"
+version = "0.1.0"
+authors = ["Wojciech Danilo <wojciech.danilo@gmail.com>"]
+edition = "2021"
+
+[lib]
+
+[dependencies]
+struct-split-macro = { path = "../macro" }
+
+[lints]
+workspace = true

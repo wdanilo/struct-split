@@ -1,0 +1,21 @@
+[package]
+name = "struct-split-macro"
+version = "0.1.0"
+authors = ["Wojciech Danilo <wojciech.danilo@gmail.com>"]
+description = "Helper for struct-split crate."
+edition = "2021"
+keywords = ["macros"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wdanilo/struct-split"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2" }
+quote = { version = "1" }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+itertools = { version = "0.13" }
+
+[lints]
+workspace = true
