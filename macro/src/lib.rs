@@ -214,18 +214,22 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
     //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, mut * $ ($xs:tt) *]) => {
     //         CtxImpl! { $lt [[RefMut] [RefMut] [RefMut] [RefMut]] [$ ($xs) *] }
     //     };
-    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, geometry $ ($xs:tt) *]) => {
+    //
+    //
+    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, $(ref)? geometry $ ($xs:tt) *]) => {
     //         CtxImpl! { $lt [[Ref] $t1 $t2 $t3] [$ ($xs) *] }
     //     };
-    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, material $ ($xs:tt) *]) => {
+    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, $(ref)? material $ ($xs:tt) *]) => {
     //         CtxImpl! { $lt [$t0 [Ref] $t2 $t3] [$ ($xs) *] }
     //     };
-    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, mesh $ ($xs:tt) *]) => {
+    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, $(ref)? mesh $ ($xs:tt) *]) => {
     //         CtxImpl! { $lt [$t0 $t1 [Ref] $t3] [$ ($xs) *] }
     //     };
-    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, scene $ ($xs:tt) *]) => {
+    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, $(ref)? scene $ ($xs:tt) *]) => {
     //         CtxImpl! { $lt [$t0 $t1 $t2 [Ref]] [$ ($xs) *] }
     //     };
+    //
+    //
     //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, mut geometry $ ($xs:tt) *]) => {
     //         CtxImpl! { $lt [[RefMut] $t1 $t2 $t3] [$ ($xs) *] }
     //     };
@@ -238,6 +242,22 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
     //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, mut scene $ ($xs:tt) *]) => {
     //         CtxImpl! { $lt [$t0 $t1 $t2 [RefMut]] [$ ($xs) *] }
     //     };
+    //
+    //
+    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, ! geometry $ ($xs:tt) *]) => {
+    //         CtxImpl! { $lt [[None] $t1 $t2 $t3] [$ ($xs) *] }
+    //     };
+    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, ! material $ ($xs:tt) *]) => {
+    //         CtxImpl! { $lt [$t0 [None] $t2 $t3] [$ ($xs) *] }
+    //     };
+    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, ! mesh $ ($xs:tt) *]) => {
+    //         CtxImpl! { $lt [$t0 $t1 [None] $t3] [$ ($xs) *] }
+    //     };
+    //     ($lt:lifetime [$t0:tt $t1:tt $t2:tt $t3:tt] [, ! scene $ ($xs:tt) *]) => {
+    //         CtxImpl! { $lt [$t0 $t1 $t2 [None]] [$ ($xs) *] }
+    //     };
+    //
+    //
     //     ($lt:lifetime [$ ([$ ($ts:tt) *]) *] [$ (,) *]) => {
     //         CtxRef < $lt, $ ($ ($ts) *), * >
     //     };
@@ -262,19 +282,24 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
             }
             }).collect_vec()
         };
-        let patterns_ref = gen_patterns(quote!{}, &q_ref);
+        let patterns_ref = gen_patterns(quote!{$(ref)?}, &q_ref);
         let patterns_ref_mut = gen_patterns(quote!{mut}, &q_ref_mut);
+        let patterns_ref_none = gen_patterns(quote!{!}, &q_none);
         quote! {
             #[macro_export]
             macro_rules! #struct_ident2 {
-                (@ $lt:lifetime [#(#ts:tt)*] [,* $($xs:tt)*]) => {
+                (@ $lt:lifetime [#(#ts:tt)*] [, ! * $($xs:tt)*]) => {
+                    $crate::#struct_ident! {@ $lt [#(#all_none)*] [$($xs)*]}
+                };
+                (@ $lt:lifetime [#(#ts:tt)*] [, * $($xs:tt)*]) => {
                     $crate::#struct_ident! {@ $lt [#(#all_ref)*] [$($xs)*]}
                 };
-                (@ $lt:lifetime [#(#ts:tt)*] [,mut * $($xs:tt)*]) => {
+                (@ $lt:lifetime [#(#ts:tt)*] [, mut * $($xs:tt)*]) => {
                     $crate::#struct_ident! {@ $lt [#(#all_ref_mut)*] [$($xs)*]}
                 };
                 #(#patterns_ref)*
                 #(#patterns_ref_mut)*
+                #(#patterns_ref_none)*
                 (@ $lt:lifetime [$([$($ts:tt)*])*] [$(,)*]) => { #module::#ref_struct_ident<$lt, $($($ts)*),*> };
                 (@ $($ts:tt)*) => { error };
 

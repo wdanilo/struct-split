@@ -1,13 +1,13 @@
 [package]
 name = "struct-split"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Wojciech Danilo <wojciech.danilo@gmail.com>"]
 edition = "2021"
 
 [lib]
 
 [dependencies]
-struct-split-macro = { version = "0.1.0", path = "../macro" }
+struct-split-macro = { version = "0.1.1", path = "../macro" }
 
 [lints]
 workspace = true

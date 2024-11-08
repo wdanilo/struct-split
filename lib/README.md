@@ -54,6 +54,12 @@ fn render_scene(ctx: &mut Ctx![mesh, mut geometry, mut material], mesh: usize) {
 ## `#[module(...)]` Attribute
 In the example above, we used the `#[module(...)]` attribute, which specifies the path to the module where the macro is invoked. This attribute is necessary because, as of now, Rust does not allow procedural macros to automatically detect the path of the module they are used in. This limitation applies to both stable and unstable Rust versions.
 
+If you intend to use the generated macro from another crate, avoid using the `crate::` prefix in the `#[module(...)]` attribute. Instead, refer to your current crate by its name, for example: `#[module(my_crate::data)]`. However, Rust does not permit referring to the current crate by name by default. To enable this, add the following line to your `lib.rs` file:
+
+```rust
+extern crate self as my_crate;
+```
+
 ## Generated Macro Syntax
 A macro with the same name as the target struct is generated, allowing flexible reference specifications. The syntax follows these rules:
 

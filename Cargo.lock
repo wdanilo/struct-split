@@ -37,14 +37,14 @@ dependencies = [
 
 [[package]]
 name = "struct-split"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "struct-split-macro",
 ]
 
 [[package]]
 name = "struct-split-macro"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "itertools",
  "proc-macro2",
