@@ -7,7 +7,7 @@ edition = "2021"
 [lib]
 
 [dependencies]
-struct-split-macro = { path = "../macro" }
+struct-split-macro = { version = "0.1.0", path = "../macro" }
 
 [lints]
 workspace = true

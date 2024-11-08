@@ -2,12 +2,12 @@ use struct_split::Split;
 
 #[derive(Debug, Default)]
 pub struct GeometryCtx {
-    pub data: Vec<String>,
+    pub data: Vec<String>
 }
 
 #[derive(Debug, Default)]
 pub struct MaterialCtx {
-    pub data: Vec<String>,
+    pub data: Vec<String>
 }
 
 #[derive(Debug, Default)]
