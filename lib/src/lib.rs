@@ -60,14 +60,17 @@ pub trait RefCast<'t, T> {
 }
 
 impl<'t, T> RefCast<'t, &'t T> for T {
+    #[inline(always)]
     fn ref_cast(&'t mut self) -> &'t T { self }
 }
 
 impl<'t, T> RefCast<'t, &'t mut T> for T {
+    #[inline(always)]
     fn ref_cast(&'t mut self) -> &'t mut T { self }
 }
 
 impl<'t, T> RefCast<'t, NoAccess<T>> for T {
+    #[inline(always)]
     fn ref_cast(&'t mut self) -> NoAccess<T> { NoAccess(self) }
 }
 
@@ -108,14 +111,17 @@ pub type Acquired<This, Target> = <This as Acquire<Target>>::Rest;
 pub trait Split<Target> {
     type Rest;
 
+    #[inline(always)]
     fn fit_impl(&mut self) -> &mut Target {
         unsafe { &mut *(self as *mut _ as *mut _) }
     }
 
+    #[inline(always)]
     fn fit_rest_impl(&mut self) -> &mut Self::Rest {
         unsafe { &mut *(self as *mut _ as *mut _) }
     }
 
+    #[inline(always)]
     fn split_impl(&mut self) -> (&mut Target, &mut Self::Rest) {
         let a = unsafe { &mut *(self as *mut _ as *mut _) };
         let b = unsafe { &mut *(self as *mut _ as *mut _) };
@@ -125,12 +131,15 @@ pub trait Split<Target> {
 
 impl<T> SplitHelper for T {}
 pub trait SplitHelper {
+    #[inline(always)]
     fn fit<Target>(&mut self) -> &mut Target
     where Self: Split<Target> { self.fit_impl() }
 
+    #[inline(always)]
     fn fit_rest<Target>(&mut self) -> &mut Self::Rest
     where Self: Split<Target> { self.fit_rest_impl() }
 
+    #[inline(always)]
     fn split<Target>(&mut self) -> (&mut Target, &mut Self::Rest)
     where Self: Split<Target> { self.split_impl() }
 }
@@ -146,6 +155,7 @@ pub trait AsRefs<'t, T> {
 
 impl<'t, T> AsRefsHelper<'t> for T {}
 pub trait AsRefsHelper<'t> {
+    #[inline(always)]
     fn as_refs<T>(&'t mut self) -> T
     where Self: AsRefs<'t, T> { self.as_refs_impl() }
 }

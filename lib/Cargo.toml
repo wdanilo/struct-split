@@ -1,6 +1,6 @@
 [package]
 name = "struct-split"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Wojciech Danilo <wojciech.danilo@gmail.com>"]
 description = "Efficiently split struct fields into distinct subsets of references, ensuring zero overhead and strict borrow checker compliance (non-overlapping mutable references)."
 edition = "2021"
@@ -11,7 +11,7 @@ repository = "https://github.com/wdanilo/struct-split"
 [lib]
 
 [dependencies]
-struct-split-macro = { version = "0.1.1", path = "../macro" }
+struct-split-macro = { version = "0.1.2", path = "../macro" }
 
 [lints]
 workspace = true

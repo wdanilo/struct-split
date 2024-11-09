@@ -119,6 +119,7 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
         impl<'_t, #(#params,)*>
         #lib::AsRefs<'_t, #ref_struct_ident<'_t, #(#params,)*>> for #struct_ident
         where #bounds_params_access #(#field_types: #lib::RefCast<'_t, #field_values>,)* {
+            #[inline(always)]
             fn as_refs_impl(& '_t mut self) -> #ref_struct_ident<'_t, #(#params,)*> {
                 #ref_struct_ident {
                     #(#field_idents: #lib::RefCast::ref_cast(&mut self.#field_idents),)*
@@ -143,6 +144,7 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
         quote! {
             #[allow(non_camel_case_types)]
             impl #struct_ident {
+                #[inline(always)]
                 pub fn as_ref_mut<'_t>(&'_t mut self) -> #ref_struct_ident<'_t, #(#ref_muts,)*> {
                     #ref_struct_ident {
                         #(#field_idents: &mut self.#field_idents,)*
@@ -331,6 +333,7 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
         let fns = field_idents.iter().zip(field_types.iter()).map(|(field, ty)| {
             let name = Ident::new(&format!("extract_{field}"), field.span());
             quote! {
+                #[inline(always)]
                 pub fn #name(&mut self) -> (&mut #ty, &mut <Self as #lib::Split<#struct_ident!['_t, mut #field]>>::Rest)
                 where #field: #lib::Acquire<#lib::RefMut> {
                     let (a, b) = <Self as #lib::Split<#struct_ident!['_t, mut #field]>>::split_impl(self);

@@ -1,6 +1,6 @@
 [package]
 name = "struct-split-macro"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Wojciech Danilo <wojciech.danilo@gmail.com>"]
 description = "Helper for struct-split crate."
 edition = "2021"
