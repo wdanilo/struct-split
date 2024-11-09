@@ -2,7 +2,11 @@
 name = "struct-split"
 version = "0.1.1"
 authors = ["Wojciech Danilo <wojciech.danilo@gmail.com>"]
+description = "Efficiently split struct fields into distinct subsets of references, ensuring zero overhead and strict borrow checker compliance (non-overlapping mutable references)."
 edition = "2021"
+keywords = ["macros", "struct", "split", "fields", "references"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wdanilo/struct-split"
 
 [lib]
 
