@@ -76,36 +76,31 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
 
     // Generates:
     // #[repr(C)]
-    // pub struct CtxRef<'t, geometry, material, mesh, scene> {
-    //     geometry: Value<'t, geometry, GeometryCtx>,
-    //     material: Value<'t, material, MaterialCtx>,
-    //     mesh: Value<'t, mesh, MeshCtx>,
-    //     scene: Value<'t, scene, SceneCtx>,
+    // pub struct CtxRef<geometry, material, mesh, scene> {
+    //     geometry: geometry,
+    //     material: material,
+    //     mesh: mesh,
+    //     scene: scene,
     // }
     let ref_struct = quote! {
         #[derive(Debug)]
         #[repr(C)]
         #[allow(non_camel_case_types)]
-        pub struct #ref_struct_ident<'_t, #(#params),*>
-        where #bounds_params_access {
-            #(pub #field_idents : #field_values),*
+        pub struct #ref_struct_ident<#(#params),*> {
+            #(pub #field_idents : #params),*
         }
     };
 
     // Generates:
     // impl<'t, geometry, material, mesh, scene>
-    //     AsRefs<'t, CtxRef<'t, geometry, material, mesh, scene>> for Ctx
+    //     AsRefs<'t, CtxRef<geometry, material, mesh, scene>> for Ctx
     // where
-    //     geometry:    Access,
-    //     material:    Access,
-    //     mesh:        Access,
-    //     scene:       Access,
-    //     GeometryCtx: RefCast<'t, Value<'t, geometry, GeometryCtx>>,
-    //     MaterialCtx: RefCast<'t, Value<'t, material, MaterialCtx>>,
-    //     MeshCtx:     RefCast<'t, Value<'t, mesh,     MeshCtx>>,
-    //     SceneCtx:    RefCast<'t, Value<'t, scene,    SceneCtx>>,
+    //     GeometryCtx: RefCast<'t, geometry>>,
+    //     MaterialCtx: RefCast<'t, material>>,
+    //     MeshCtx:     RefCast<'t, mesh>>,
+    //     SceneCtx:    RefCast<'t, scene>>,
     // {
-    //     fn as_refs_impl(&'t mut self) -> CtxRef<'t, geometry, material, mesh, scene> {
+    //     fn as_refs_impl(&'t mut self) -> CtxRef<geometry, material, mesh, scene> {
     //         CtxRef {
     //             geometry: RefCast::ref_cast(&mut self.geometry),
     //             material: RefCast::ref_cast(&mut self.material),
@@ -117,8 +112,8 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
     let impl_as_refs = quote! {
         #[allow(non_camel_case_types)]
         impl<'_t, #(#params,)*>
-        #lib::AsRefs<'_t, #ref_struct_ident<'_t, #(#params,)*>> for #struct_ident
-        where #bounds_params_access #(#field_types: #lib::RefCast<'_t, #field_values>,)* {
+        #lib::AsRefs<'_t, #ref_struct_ident<#(#params,)*>> for #struct_ident
+        where #(#field_types: #lib::RefCast<'_t, #field_values>,)* {
             #[inline(always)]
             fn as_refs_impl(& '_t mut self) -> #ref_struct_ident<'_t, #(#params,)*> {
                 #ref_struct_ident {
@@ -214,10 +209,14 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
             impl<'_t, #(#params,)*>
             #lib::IntoFields for #ref_struct_ident<'_t, #(#params,)*>
             where #bounds_params_access {
-                type Fields = #lib::HList!{#(#params,)*};
+                type Fields = #lib::HList!{#(#field_values,)*};
             }
         }
     };
+
+    // let field_values = field_types.iter().zip(params.iter()).map(|(field_ty, param)| {
+    //     quote! { #lib::Value<'_t, #param, #field_ty> }
+    // }).collect_vec();
 
     // Generates:
     // impl<'t, geometry_target, material_target, mesh_target, scene_target,
@@ -404,13 +403,13 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
 
     let out = quote! {
         #ref_struct
-        #impl_as_refs
-        #impl_as_ref_mut
-        // #impl_split
-        #ref_macro
-        #impl_extract_fields
-        #impl_into_fields
-        #impl_from_fields
+        // #impl_as_refs
+        // #impl_as_ref_mut
+        // // #impl_split
+        // #ref_macro
+        // #impl_extract_fields
+        // #impl_into_fields
+        // #impl_from_fields
     };
 
     println!(">>> {}", out);

@@ -12,7 +12,6 @@ pub use struct_split_macro::*;
 // ==============
 
 pub mod traits {
-    pub use super::Access as _;
     pub use super::Acquire as _;
     pub use super::Split as _;
     pub use super::SplitHelper as _;
@@ -37,14 +36,14 @@ pub struct Labeled<L, T> {
 // === Access Flag ===
 // ===================
 
-#[derive(Debug)]
-pub struct None;
-
-#[derive(Debug)]
-pub struct Ref;
-
-#[derive(Debug)]
-pub struct RefMut;
+// #[derive(Debug)]
+// pub struct None;
+//
+// #[derive(Debug)]
+// pub struct Ref;
+//
+// #[derive(Debug)]
+// pub struct RefMut;
 
 
 // =========================
@@ -53,7 +52,7 @@ pub struct RefMut;
 
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct NoAccess<T>(*mut T);
+pub struct Hidden<T>(*mut T);
 
 
 // ===============
@@ -74,9 +73,9 @@ impl<'t, T> RefCast<'t, &'t mut T> for T {
     fn ref_cast(&'t mut self) -> &'t mut T { self }
 }
 
-impl<'t, T> RefCast<'t, NoAccess<T>> for T {
+impl<'t, T> RefCast<'t, Hidden<T>> for T {
     #[inline(always)]
-    fn ref_cast(&'t mut self) -> NoAccess<T> { NoAccess(self) }
+    fn ref_cast(&'t mut self) -> Hidden<T> { Hidden(self) }
 }
 
 
@@ -84,27 +83,28 @@ impl<'t, T> RefCast<'t, NoAccess<T>> for T {
 // === Access ===
 // ==============
 
-pub trait Access            { type Value<'t, T: 't + Debug>: Debug; }
-impl      Access for Ref    { type Value<'t, T: 't + Debug> = &'t T; }
-impl      Access for RefMut { type Value<'t, T: 't + Debug> = &'t mut T; }
-impl      Access for None   { type Value<'t, T: 't + Debug> = NoAccess<T>; }
-impl<L, S> Access for Labeled<L, S>
-where S: Access {
-    type Value<'t, T: 't + Debug> = S::Value<'t, T>;
-}
-
-pub type Value<'t, L, T> = <L as Access>::Value<'t, T>;
+// pub trait Access            { type Value<'t, T: 't + Debug>: Debug; }
+// impl      Access for Ref    { type Value<'t, T: 't + Debug> = &'t T; }
+// impl      Access for RefMut { type Value<'t, T: 't + Debug> = &'t mut T; }
+// impl      Access for None   { type Value<'t, T: 't + Debug> = Hidden<T>; }
+// impl<L, S> Access for Labeled<L, S>
+// where S: Access {
+//     type Value<'t, T: 't + Debug> = S::Value<'t, T>;
+// }
+//
+// pub type Value<'t, L, T> = <L as Access>::Value<'t, T>;
 
 
 // ===============
 // === Acquire ===
 // ===============
 
-pub trait       Acquire<Target: Access>    { type Rest: Access; }
-impl<T: Access> Acquire<None>   for T      { type Rest = T; }
-impl            Acquire<RefMut> for RefMut { type Rest = None; }
-impl            Acquire<Ref>    for RefMut { type Rest = Ref; }
-impl            Acquire<Ref>    for Ref    { type Rest = Ref; }
+pub trait   Acquire<Target>                  { type Rest; }
+impl<'t, T> Acquire<Hidden<T>> for &'t mut T { type Rest = &'t mut T; }
+impl<'t, T> Acquire<Hidden<T>> for &'t     T { type Rest = &'t     T; }
+impl<'t, T> Acquire<&'t mut T> for &'t mut T { type Rest = Hidden<T>; }
+impl<'t, T> Acquire<&'t     T> for &'t mut T { type Rest = &'t T; }
+impl<'t, T> Acquire<&'t     T> for &'t     T { type Rest = &'t T; }
 
 pub type Acquired<This, Target> = <This as Acquire<Target>>::Rest;
 
@@ -132,7 +132,6 @@ impl SplitFields<Nil> for Nil {
 
 impl<H, H2, T, T2> SplitFields<Cons<H2, T2>> for Cons<H, T> where
 H: Acquire<H2>,
-H2: Access,
 T: SplitFields<T2> {
     type Rest = Cons<Acquired<H, H2>, <T as SplitFields<T2>>::Rest>;
 }
