@@ -154,11 +154,76 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
         }
     };
 
+    // // Generates:
+    // // impl<'t, geometry_target, material_target, mesh_target, scene_target,
+    // //          geometry,        material,        mesh,        scene>
+    // // Split<CtxRef<'t, geometry_target, material_target, mesh_target, scene_target>>
+    // // for CtxRef<'t, geometry,        material,        mesh,        scene>
+    // // where
+    // //     geometry:        Access,
+    // //     material:        Access,
+    // //     mesh:            Access,
+    // //     scene:           Access,
+    // //     geometry_target: Access,
+    // //     material_target: Access,
+    // //     mesh_target:     Access,
+    // //     scene_target:    Access,
+    // //     geometry:        Acquire<geometry_target>,
+    // //     material:        Acquire<material_target>,
+    // //     mesh:            Acquire<mesh_target>,
+    // //     scene:           Acquire<scene_target>,
+    // // {
+    // //     type Rest = CtxRef<'t,
+    // //         Acquired<geometry, target_geometry>,
+    // //         Acquired<material, target_material>,
+    // //         Acquired<mesh,     target_mesh>,
+    // //         Acquired<scene,    target_scene>,
+    // //     >;
+    // // }
+    // let impl_split = {
+    //     let target_params = params.iter().map(|i| Ident::new(&format!("{i}_target"), i.span())).collect_vec();
+    //     let bounds_target_params_access = quote! { #(#target_params: #lib::Access,)* };
+    //     quote! {
+    //         #[allow(non_camel_case_types)]
+    //         impl<'_t, #(#params,)* #(#target_params,)*>
+    //         #lib::Split<#ref_struct_ident<'_t, #(#target_params,)*>> for #ref_struct_ident<'_t, #(#params,)*>
+    //         where
+    //             #bounds_params_access
+    //             #bounds_target_params_access
+    //             #(#params: #lib::Acquire<#target_params>,)*
+    //         {
+    //             type Rest = #ref_struct_ident<'_t, #(#lib::Acquired<#params, #target_params>,)*>;
+    //         }
+    //     }
+    // };
+
+    // Generates:
+    // impl<'t, geometry, material, mesh, scene>
+    // IntoFields<CtxRef<'t, geometry, material, mesh, scene>>
+    // where
+    //     geometry: Access,
+    //     material: Access,
+    //     mesh:     Access,
+    //     scene:    Access,
+    // {
+    //     type Fields = HList![geometry, material, mesh, scene];
+    // }
+    let impl_into_fields = {
+        quote! {
+            #[allow(non_camel_case_types)]
+            impl<'_t, #(#params,)*>
+            #lib::IntoFields for #ref_struct_ident<'_t, #(#params,)*>
+            where #bounds_params_access {
+                type Fields = #lib::HList!{#(#params,)*};
+            }
+        }
+    };
+
     // Generates:
     // impl<'t, geometry_target, material_target, mesh_target, scene_target,
     //          geometry,        material,        mesh,        scene>
-    // Split<CtxRef<'t, geometry_target, material_target, mesh_target, scene_target>>
-    // for CtxRef<'t, geometry,        material,        mesh,        scene>
+    // FromFields<HList![geometry_target, material_target, mesh_target, scene_target]>
+    // for CtxRef<'t, geometry, material, mesh, scene>
     // where
     //     geometry:        Access,
     //     material:        Access,
@@ -168,31 +233,18 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
     //     material_target: Access,
     //     mesh_target:     Access,
     //     scene_target:    Access,
-    //     geometry:        Acquire<geometry_target>,
-    //     material:        Acquire<material_target>,
-    //     mesh:            Acquire<mesh_target>,
-    //     scene:           Acquire<scene_target>,
     // {
-    //     type Rest = CtxRef<'t,
-    //         Acquired<geometry, target_geometry>,
-    //         Acquired<material, target_material>,
-    //         Acquired<mesh,     target_mesh>,
-    //         Acquired<scene,    target_scene>,
-    //     >;
+    //     type Result = CtxRef<'t, geometry_target, material_target, mesh_target, scene_target>;
     // }
-    let impl_split = {
+    let impl_from_fields = {
         let target_params = params.iter().map(|i| Ident::new(&format!("{i}_target"), i.span())).collect_vec();
         let bounds_target_params_access = quote! { #(#target_params: #lib::Access,)* };
         quote! {
             #[allow(non_camel_case_types)]
             impl<'_t, #(#params,)* #(#target_params,)*>
-            #lib::Split<#ref_struct_ident<'_t, #(#target_params,)*>> for #ref_struct_ident<'_t, #(#params,)*>
-            where
-                #bounds_params_access
-                #bounds_target_params_access
-                #(#params: #lib::Acquire<#target_params>,)*
-            {
-                type Rest = #ref_struct_ident<'_t, #(#lib::Acquired<#params, #target_params>,)*>;
+            #lib::FromFields<#lib::HList!{#(#target_params,)*}> for #ref_struct_ident<'_t, #(#params,)*>
+            where #bounds_params_access #bounds_target_params_access {
+                type Result = #ref_struct_ident<'_t, #(#target_params,)*>;
             }
         }
     };
@@ -354,11 +406,13 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
         #ref_struct
         #impl_as_refs
         #impl_as_ref_mut
-        #impl_split
+        // #impl_split
         #ref_macro
         #impl_extract_fields
+        #impl_into_fields
+        #impl_from_fields
     };
 
-    // println!(">>> {}", out);
+    println!(">>> {}", out);
     TokenStream::from(out)
 }

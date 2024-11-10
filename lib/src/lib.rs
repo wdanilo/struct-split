@@ -1,3 +1,8 @@
+pub mod hlist;
+
+use hlist::Cons;
+use hlist::Nil;
+
 use std::fmt::Debug;
 use std::marker::PhantomData;
 pub use struct_split_macro::*;
@@ -104,9 +109,33 @@ impl            Acquire<Ref>    for Ref    { type Rest = Ref; }
 pub type Acquired<This, Target> = <This as Acquire<Target>>::Rest;
 
 
+// ==============
+// === Fields ===
+// ==============
+
+pub trait IntoFields { type Fields; }
+type Fields<T> = <T as IntoFields>::Fields;
+
+pub trait FromFields<Fields> { type Result; }
+type WithFields<T, Fields> = <T as FromFields<Fields>>::Result;
+
 // =============
 // === Split ===
 // =============
+
+pub trait SplitFields<Target> { type Rest; }
+type SplitFieldsRest<T, Target> = <T as SplitFields<Target>>::Rest;
+
+impl SplitFields<Nil> for Nil {
+    type Rest = Nil;
+}
+
+impl<H, H2, T, T2> SplitFields<Cons<H2, T2>> for Cons<H, T> where
+H: Acquire<H2>,
+H2: Access,
+T: SplitFields<T2> {
+    type Rest = Cons<Acquired<H, H2>, <T as SplitFields<T2>>::Rest>;
+}
 
 pub trait Split<Target> {
     type Rest;
@@ -127,6 +156,14 @@ pub trait Split<Target> {
         let b = unsafe { &mut *(self as *mut _ as *mut _) };
         (a, b)
     }
+}
+
+impl<Source, Target> Split<Target> for Source where
+Source: IntoFields,
+Target: IntoFields,
+Fields<Source>: SplitFields<Fields<Target>>,
+Target: FromFields<SplitFieldsRest<Fields<Source>, Fields<Target>>> {
+    type Rest = WithFields<Target, SplitFieldsRest<Fields<Source>, Fields<Target>>>;
 }
 
 impl<T> SplitHelper for T {}
