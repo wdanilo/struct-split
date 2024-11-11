@@ -37,24 +37,25 @@ pub struct Ctx {
 Some functions require mutable access to only part of the root registry. Should they take a mutable reference to the entire `Ctx` struct, or should each field be passed separately? Passing the entire `Ctx` is inflexible and impractical. Consider the following code:
 
 ```rust
+fn render_pass1(ctx: &mut Ctx) {
+   for scene in &ctx.scene.data {
+      for mesh in &scene.meshes {
+         render_scene(ctx, *mesh)
+      }
+   }
+   render_pass2(ctx);
+}
+
+fn render_pass2(ctx: &mut Ctx) {
+   // ...
+}
+
 fn render_scene(ctx: &mut Ctx, mesh: usize) {
     // ...
 }
 ```
 
-At first glance, this seems reasonable. However, using it like this:
-
-```rust
-fn render(ctx: &mut Ctx) {
-    for scene in &ctx.scene.data {
-        for mesh in &scene.meshes {
-            render_scene(ctx, *mesh)
-        }
-    }
-}
-```
-
-will be rejected by the compiler:
+At first glance, this seems reasonable. However, it will be rejected by the compiler:
 
 ```rust
 Cannot borrow `*ctx` as mutable because it is also borrowed as 
@@ -73,7 +74,7 @@ immutable:
 Passing each field separately works but becomes cumbersome and error-prone as the number of fields grows:
 
 ```rust
-fn render(
+fn render_pass1(
     geometry: &mut GeometryCtx, 
     material: &mut MaterialCtx,
     mesh:     &mut MeshCtx,
@@ -91,6 +92,23 @@ fn render(
             )
         }
     }
+   render_pass2(
+      geometry, 
+      material, 
+      mesh, 
+      scene,
+      // Possibly many more fields...
+   );
+}
+
+fn render_pass2(
+   geometry: &mut GeometryCtx,
+   material: &mut MaterialCtx,
+   mesh:     &mut MeshCtx,
+   scene:    &mut SceneCtx,
+   // Possibly many more fields...
+) {
+   // ...
 }
 
 fn render_scene(
@@ -213,15 +231,21 @@ fn main() {
     render(ctx.as_refs_mut().partial_borrow());
 }
 
-fn render(ctx: &mut p!(<mut *> Ctx)) {
+fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
     // Extract a mut ref to `scene`, excluding it from `ctx`.
-    let (scene, ctx) = ctx.extract_scene();
+    let (scene, ctx2) = ctx.extract_scene();
     for scene in &scene.data {
         for mesh in &scene.meshes {
             // Extract references required by `render_scene`.
-            render_scene(ctx.partial_borrow(), *mesh)
+            render_scene(ctx2.partial_borrow(), *mesh)
         }
     }
+    // As `ctx2` is no longer used, we can use `ctx` again.
+    render_pass2(ctx);
+}
+
+fn render_pass2(ctx: &mut p!(<mut *> Ctx)) {
+    // ...
 }
 
 // Take a ref to `mesh` and mut ref to `geometry` and `material`.
@@ -299,7 +323,7 @@ impl CtxRef</* ... */> {
     /// Concatenates the current partial borrow with 
     /// another one.
     fn join<Other>(&mut self, other: &mut Other) 
-       -> &mut Joined<Self, Other> {
+       -> Joined<Self, Other> {
         // ...
     }
 }
@@ -309,6 +333,38 @@ impl CtxRef</* ... */> {
 type RenderCtx<'t> = p!(<'t, scene> Ctx);
 type GlyphCtx<'t> = p!(<'t, geometry, material, mesh> Ctx);
 type GlyphRenderCtx<'t> = Joined<RenderCtx<'t>, GlyphCtx<'t>>;
+```
+
+Please note, that while the `join` operation might seem useful, in most cases it is better to re-structure your code to avoid it. For example, let's consider the previous implementation of `render_pass1`: 
+
+```rust
+fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
+    let (scene, ctx2) = ctx.extract_scene();
+    for scene in &scene.data {
+        for mesh in &scene.meshes {
+            render_scene(ctx2.partial_borrow(), *mesh)
+        }
+    }
+    render_pass2(ctx);
+}
+```
+
+It could also be implemented using explicit split and join, but it would make the code less readable:
+
+```rust
+fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
+    // The `ctx` var shadows the original one here.
+    let (scene_ctx, ctx) = ctx.split::<p!(<mut scene> Ctx)>();
+    for scene in &scene_ctx.scene.data {
+        for mesh in &scene.meshes {
+            render_scene(ctx.partial_borrow(), *mesh)
+        }
+    }
+    // Because the original var is inaccessible, we need to
+    // join the parts back together.
+    let mut ctx = ctx.join(&scene_ctx);
+    render_pass2(&mut ctx);
+}
 ```
 
 ## 👓 `#[module(...)]` Attribute

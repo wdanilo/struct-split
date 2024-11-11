@@ -146,22 +146,15 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
 
     // Generates:
     // impl<geometry, material, mesh, scene>
-    // IntoFields for CtxRef<geometry, material, mesh, scene> {
+    // HasFields for CtxRef<geometry, material, mesh, scene> {
     //     type Fields = HList![geometry, material, mesh, scene];
-    //     fn into_fields(self) -> Self::Fields {
-    //         hlist![self.geometry, self.material, self.mesh, self.scene]
-    //     }
     // }
     let impl_into_fields = {
         quote! {
             #[allow(non_camel_case_types)]
             impl<#(#params,)*>
-            #lib::IntoFields for #ref_struct_ident<#(#params,)*> {
+            #lib::HasFields for #ref_struct_ident<#(#params,)*> {
                 type Fields = #lib::HList!{#(#params,)*};
-                fn into_fields(&mut self) -> Self::Fields {
-                    panic!()
-                    // #lib::hlist![#(&mut self.#field_idents,)*]
-                }
             }
         }
     };
@@ -172,10 +165,6 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
     // FromFields<HList![geometry_target, material_target, mesh_target, scene_target]>
     // for CtxRef<geometry, material, mesh, scene> {
     //     type Result = CtxRef<geometry_target, material_target, mesh_target, scene_target>;
-    //     fn from_fields(fields: HList![geometry_target, material_target, mesh_target, scene_target]) -> Self::Result {
-    //         let hlist![geometry, material, mesh, scene] = fields;
-    //         CtxRef { geometry, material, mesh, scene }
-    //     }
     // }
     let impl_from_fields = {
         let target_params = params.iter().map(|i| Ident::new(&format!("{i}_target"), i.span())).collect_vec();
@@ -184,9 +173,48 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
             impl<#(#params,)* #(#target_params,)*>
             #lib::FromFields<#lib::HList!{#(#target_params,)*}> for #ref_struct_ident<#(#params,)*> {
                 type Result = #ref_struct_ident<#(#target_params,)*>;
-                fn from_fields(fields: #lib::HList!{#(#target_params,)*}) -> Self::Result {
-                    let #lib::hlist_pat![#(#field_idents,)*] = fields;
-                    #ref_struct_ident { #(#field_idents,)* }
+            }
+        }
+    };
+
+    // Generates:
+    // impl<'t, geometry, material, mesh, scene, geometry_other, material_other, mesh_other, scene_other>
+    // Join<&'t mut CtxRef<geometry_other, material_other, mesh_other, scene_other>>
+    // for &'t mut CtxRef<geometry, material, mesh, scene> where
+    //     geometry: JoinField<'t, geometry2>,
+    //     material: JoinField<'t, material2>,
+    //     mesh: JoinField<'t, mesh2>,
+    //     scene: JoinField<'t, scene2>,
+    // {
+    //     type Result = CtxRef<
+    //         <geometry as JoinField<'t, geometry_other>>::Result,
+    //         <material as JoinField<'t, material_other>>::Result,
+    //         <mesh as JoinField<'t, mesh_other>>::Result,
+    //         <scene as JoinField<'t, scene_other>>::Result,
+    //     >;
+    //     fn join(self, other: &'t mut CtxRef<geometry_other, material_other, mesh_other, scene_other>) -> Self::Result {
+    //         let geometry = self.geometry.join_field(&mut other.geometry);
+    //         let material = self.material.join_field(&mut other.material);
+    //         let mesh = self.mesh.join_field(&mut other.mesh);
+    //         let scene = self.scene.join_field(&mut other.scene);
+    //         CtxRef { geometry, material, mesh, scene }
+    //     }
+    // }
+    let impl_join = {
+        let other_params = params.iter().map(|i| Ident::new(&format!("{i}_other"), i.span())).collect_vec();
+        quote! {
+            #[allow(non_camel_case_types)]
+            impl<'_t, #(#params,)* #(#other_params,)*>
+            #lib::Join<&'_t mut #ref_struct_ident<#(#other_params,)*>> for &'_t mut #ref_struct_ident<#(#params,)*>
+            where
+                #(#params: #lib::JoinField<'_t, #other_params>,)*
+            {
+                type Result = #ref_struct_ident<#(<#params as #lib::JoinField<'_t, #other_params>>::Result,)*>;
+                #[inline(always)]
+                fn join(self, other: &'_t mut #ref_struct_ident<#(#other_params,)*>) -> Self::Result {
+                    #ref_struct_ident {
+                        #(#field_idents: #lib::JoinField::join_field(&mut self.#field_idents, &mut other.#field_idents),)*
+                    }
                 }
             }
         }
@@ -371,6 +399,7 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
         #impl_extract_fields
         #impl_into_fields
         #impl_from_fields
+        #impl_join
     };
 
     // println!(">>> {}", out);
