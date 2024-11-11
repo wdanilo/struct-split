@@ -4,7 +4,6 @@ use hlist::Cons;
 use hlist::Nil;
 
 use std::fmt::Debug;
-use std::marker::PhantomData;
 pub use struct_split_macro::*;
 
 // ==============
@@ -19,31 +18,6 @@ pub mod traits {
     pub use super::AsRefs as _;
     pub use super::AsRefsHelper as _;
 }
-
-
-// ===============
-// === Labeled ===
-// ===============
-
-#[repr(transparent)]
-pub struct Labeled<L, T> {
-    label: PhantomData<L>,
-    data: T,
-}
-
-
-// ===================
-// === Access Flag ===
-// ===================
-
-// #[derive(Debug)]
-// pub struct None;
-//
-// #[derive(Debug)]
-// pub struct Ref;
-//
-// #[derive(Debug)]
-// pub struct RefMut;
 
 
 // =========================
@@ -79,32 +53,15 @@ impl<'t, T> RefCast<'t, Hidden<T>> for T {
 }
 
 
-// ==============
-// === Access ===
-// ==============
-
-// pub trait Access            { type Value<'t, T: 't + Debug>: Debug; }
-// impl      Access for Ref    { type Value<'t, T: 't + Debug> = &'t T; }
-// impl      Access for RefMut { type Value<'t, T: 't + Debug> = &'t mut T; }
-// impl      Access for None   { type Value<'t, T: 't + Debug> = Hidden<T>; }
-// impl<L, S> Access for Labeled<L, S>
-// where S: Access {
-//     type Value<'t, T: 't + Debug> = S::Value<'t, T>;
-// }
-//
-// pub type Value<'t, L, T> = <L as Access>::Value<'t, T>;
-
-
 // ===============
 // === Acquire ===
 // ===============
 
-pub trait   Acquire<Target>                  { type Rest; }
-impl<'t, T> Acquire<Hidden<T>> for &'t mut T { type Rest = &'t mut T; }
-impl<'t, T> Acquire<Hidden<T>> for &'t     T { type Rest = &'t     T; }
-impl<'t, T> Acquire<&'t mut T> for &'t mut T { type Rest = Hidden<T>; }
-impl<'t, T> Acquire<&'t     T> for &'t mut T { type Rest = &'t T; }
-impl<'t, T> Acquire<&'t     T> for &'t     T { type Rest = &'t T; }
+pub trait           Acquire<Target>                  { type Rest; }
+impl<'t, T, S>      Acquire<Hidden<T>> for S         { type Rest = S; }
+impl<'t: 's, 's, T> Acquire<&'s mut T> for &'t mut T { type Rest = Hidden<T>; }
+impl<'t: 's, 's, T> Acquire<&'s     T> for &'t mut T { type Rest = &'t T; }
+impl<'t: 's, 's, T> Acquire<&'s     T> for &'t     T { type Rest = &'t T; }
 
 pub type Acquired<This, Target> = <This as Acquire<Target>>::Rest;
 
@@ -194,4 +151,22 @@ pub trait AsRefsHelper<'t> {
     #[inline(always)]
     fn as_refs<T>(&'t mut self) -> T
     where Self: AsRefs<'t, T> { self.as_refs_impl() }
+}
+
+// ==============
+// === Macros ===
+// ==============
+
+#[macro_export]
+macro_rules! lifetime_chooser {
+    ($lt1:lifetime $lt2:lifetime $($ts:tt)*) => {& $lt2 $($ts)*};
+    ($lt1:lifetime $($ts:tt)*) => {& $lt1 $($ts)*};
+}
+
+#[macro_export]
+macro_rules! partial_borrow {
+    (& < $($ts:tt)*)              => { $crate::partial_borrow! { @ '_  [] $($ts)* } };
+    (& $lt:lifetime < $($ts:tt)*) => { $crate::partial_borrow! { @ $lt [] $($ts)* } };
+    (@ $lt:lifetime [$($xs:tt)*] > $t:ident) => { & $lt mut $t! { $($xs)* } };
+    (@ $lt:lifetime [$($xs:tt)*] $t:tt $($ts:tt)*) => { $crate::partial_borrow! { @ $lt [$($xs)* $t] $($ts)* } };
 }

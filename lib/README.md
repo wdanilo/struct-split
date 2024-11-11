@@ -1,5 +1,5 @@
 # 🔪 struct-split
-Efficiently split struct fields into distinct subsets of references, ensuring **zero overhead** and **strict borrow checker compliance** (non-overlapping mutable references). It’s similar to [slice::split_at_mut](https://doc.rust-lang.org/std/primitive.slice.html#method.split_at_mut), but tailored for structs.
+Zero overhead, safe implementation of the [partial borrow idea](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020). It lets you parametrize struct borrows with field names. It’s similar to [slice::split_at_mut](https://doc.rust-lang.org/std/primitive.slice.html#method.split_at_mut), but tailored for structs.
 
 # 😵‍💫 Problem
 Suppose you’re building a rendering engine with registries for geometry, materials, and scenes. Entities reference each other by ID (`usize`), stored within various registries:
@@ -44,7 +44,8 @@ fn render(ctx: &mut Ctx) {
 will be rejected by the compiler:
 
 ```rust
-Cannot borrow `*ctx` as mutable because it is also borrowed as immutable:
+Cannot borrow `*ctx` as mutable because it is also borrowed as 
+immutable:
 
 |  for scene in &ctx.scene.data {
 |               ---------------
@@ -64,6 +65,7 @@ fn render(
     material: &mut MaterialCtx,
     mesh:     &mut MeshCtx,
     scene:    &mut SceneCtx,
+    // Possibly many more fields...
 ) {
     for scene in &scene.data {
         for mesh_ix in &scene.meshes {
@@ -76,6 +78,7 @@ fn render_scene(
     geometry: &mut GeometryCtx, 
     material: &mut MaterialCtx,
     mesh:     &mut MeshCtx,
+    // Possibly many more fields...
     mesh_ix:  usize
 ) {
       // ...
@@ -84,20 +87,33 @@ fn render_scene(
 
 In real-world use, this problem commonly impacts API design, making code hard to maintain and understand. This issue is also explored in the following sources:
 
-- [The Rustonomicon "Splitting Borrows"](https://doc.rust-lang.org/nomicon/borrow-splitting.html).
-- [Afternoon Rusting "Multiple Mutable References"](https://oribenshir.github.io/afternoon_rusting/blog/mutable-reference).
 - [Rust Internals "Notes on partial borrow"](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020).
+- [The Rustonomicon "Splitting Borrows"](https://doc.rust-lang.org/nomicon/borrow-splitting.html).
 - [Niko Matsakis Blog Post "After NLL: Interprocedural conflicts"](https://smallcultfollowing.com/babysteps/blog/2018/11/01/after-nll-interprocedural-conflicts/).
+- [Afternoon Rusting "Multiple Mutable References"](https://oribenshir.github.io/afternoon_rusting/blog/mutable-reference).
 - [Partial borrows Rust RFC](https://github.com/rust-lang/rfcs/issues/1215#issuecomment-333316998).
 - [HackMD "My thoughts on (and need for) partial borrows"](https://hackmd.io/J5aGp1ptT46lqLmPVVOxzg?view).
 - [Dozens of threads on different platforms](https://www.google.com/search?client=safari&rls=en&q=rust+multiple+mut+ref+struct+fields&ie=UTF-8&oe=UTF-8).
 
-## 🤩 Solution
+## 🤩 Solution, the `partial_borrow` macro
 
-With `struct-split`, you can divide `Ctx` into subsets of field references while keeping the types concise, readable, and intuitive.
+This crate exposes the `partial_borrow` macro which enables the syntax proposed in [Rust Internals "Notes on partial borrow"](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020), allowing you to parametrize borrows, in a very similar way to how you can parametrize types. We recommend importing the macro in a renamed form for a simple and concise syntax:
 
 ```rust
-use struct_split::Split;
+use struct_split::partial_borrow as b;
+```
+
+1. **Transparency:** The type `&mut Ctx` is equivalent to `b!(&mut Ctx)`.
+2. **Reference parametrization:** You can parametrize the reference with field names. For example `b!(&<geometry, mut material>Ctx)` will provide an immutable reference to the `geometry` field and a mutable one to the `material` field.
+3. **A lifetime per field reference:** You can specify lifetimes per reference. For example, `b!(&'a<'b geometry, 'c mut material>Ctx)` uses three lifetimes, where `'a: 'b` and `'a: 'c`. In case a lifetime is not specified, it defaults to `'_`.
+4. **Field selectors:** You can use the `*` symbol to include all fields, and `!` to exclude a field. For example, `b!(&<mut *, !geometry>Ctx)` will provide a mutable reference to all fields except `geometry`.
+5. **Field specialization:** Symbols can override previous specifications, allowing flexible configurations. For example, `b!(<mut *, geometry, !scene> Ctx)` will provide a mutable reference to all fields except `geometry` and `scene`, with `geometry` having an immutable reference and scene being completely inaccessible.
+
+Let's apply the above ideas to the rendering engine example:
+
+```rust
+use struct_split::PartialBorrow;
+use struct_split::partial_borrow as b;
 
 pub struct GeometryCtx { pub data: Vec<String> }
 pub struct MaterialCtx { pub data: Vec<String> }
@@ -106,8 +122,8 @@ pub struct MeshCtx     { pub data: Vec<Mesh> }
 pub struct Scene       { pub meshes: Vec<usize> }
 pub struct SceneCtx    { pub data: Vec<Scene> }
 
-#[derive(Split)]
-#[module(crate::data)]
+#[derive(PartialBorrow)]
+#[module(crate::data)] // See explanation below.
 pub struct Ctx {
       pub geometry: GeometryCtx,
       pub material: MaterialCtx,
@@ -121,20 +137,25 @@ fn main() {
     render(&mut ctx.as_ref_mut());
 }
 
-fn render(ctx: &mut Ctx![mut *]) {
-    // Extract a mutable reference to `scene`, excluding it from `ctx`.
+fn render(ctx: b!(&<mut *>Ctx)) {
+    // Extract a mutable reference to `scene`, excluding it from 
+    // `ctx`.
     let (scene, ctx) = ctx.extract_scene();
     for scene in &scene.data {
         for mesh in &scene.meshes {
-            // Extract references from `ctx` and pass them to `render_scene`.
+            // Extract references from `ctx` and pass them to 
+            // `render_scene`.
             render_scene(ctx.fit(), *mesh)
         }
     }
 }
 
-// Take immutable reference to `mesh` and mutable references to both `geometry` 
-// and `material`.
-fn render_scene(ctx: &mut Ctx![mesh, mut geometry, mut material], mesh: usize) {
+// Take immutable reference to `mesh` and mutable references to 
+// both `geometry` and `material`.
+fn render_scene(
+      ctx: b!(&<mesh, mut geometry, mut material>Ctx), 
+      mesh: usize
+) {
     // ...
 }
 ```
@@ -148,15 +169,88 @@ If you intend to use the generated macro from another crate, avoid using the `cr
 extern crate self as my_crate;
 ```
 
-## 👓 Generated Macro Syntax
-A macro with the same name as the target struct is generated, allowing flexible reference specifications. The syntax follows these rules:
+## 🛠 Batteries included
+Let's consider the following struct to demonstrate the most important tools provided by the macro:
 
-   1. **Lifetime:** The first argument can be an optional lifetime, which will be used for all references. If no lifetime is provided, '_ is used as the default.
-   2. **Mutability:** Each field name can be prefixed with mut for a mutable reference or ref for an immutable reference. If no prefix is specified, the reference is immutable by default.
-   3. **Symbols:**
-      - `*` can be used to include all fields.
-      - `!` can be used to exclude a field (providing neither an immutable nor mutable reference).
-   4. **Override Capability:** Symbols can override previous specifications, allowing flexible configurations. For example, `Ctx![mut *, geometry, !scene]` will provide a mutable reference to all fields except `geometry` and `scene`, with geometry having an immutable reference and scene being completely inaccessible.
+```rust
+#[derive(Debug, Default, PartialBorrow)]
+#[module(crate::data)]
+pub struct Ctx {
+    pub geometry: GeometryCtx,
+    pub material: MaterialCtx,
+    pub mesh:     MeshCtx,
+    pub scene:    SceneCtx,
+}
+```
+
+Both the `Ctx` struct and the generated `CtxRef` one provide the following methods:
+
+```rust
+/// Perform partial field borrowing. The `Target` type is
+/// a parametrized `CtxRef` struct, so you can use this
+/// method with explicit parametrization, like
+/// `partial_borrow::<b!(&<scene> Ctx)>()`.
+pub fn partial_borrow<Target>(&self) -> Target where /*...*/ { 
+    // ...
+}
+
+/// Returns a mutable reference to all fields.
+pub fn partial_borrow_mut(&mut self) -> b!(&<mut*> Ctx) {
+   self.partial_borrow::<b!(&<mut*> Ctx)>()
+}
+
+/// Perform field re-borrowing to match the target type
+/// and return a struct of all references left.
+fn partial_borrow_rest<Target>(&mut self) -> &mut Self::Rest {
+    // ...
+}
+
+/// Split the struct into two parts, one matching the target
+/// type, and one containing all other references.
+fn split<Target>(&mut self) -> (
+   &mut Target,
+   &mut Self::Rest
+) {
+    // ...
+}
+```
+
+2. The borrowed struct provides reshaping capabilities:
+      ```rust
+      impl CtxRef</*...*/> {
+          /// Perform field re-borrowing to match the target type.
+          fn partial_borrow<Target>(&mut self) -> &mut Target { 
+              // ...
+          }
+   
+          /// Perform field re-borrowing to match the target type
+          /// and return a struct of all references left.
+          fn partial_borrow_rest<Target>(&mut self) -> &mut Self::Rest { 
+              // ...
+          }
+   
+          /// Split the struct into two parts, one matching the target
+          /// type, and one containing all other references.
+          fn split<Target>(&mut self) -> (
+              &mut Target, 
+              &mut Self::Rest
+          ) { 
+              // ...
+          }
+      }
+      ```
+
+
+```rust
+    type GlyphCtx<'s, 't> = b!(&'s, <'t, mut geometry, mut material> Ctx);
+    type PlotCtx<'s, 't> = Joined<b!(&'s, <'t, mut mesh> Ctx), GlyphCtx<'s, 't>>;
+```
+
+
+```rust
+    type GlyphCtx<'t> = b!(<'t, mut geometry, mut material> Ctx);
+    type PlotCtx<'t> = Joined<b!(<'t, mut mesh> Ctx), GlyphCtx>;
+```
 
 
 ## 🛠 How it works under the hood
@@ -177,38 +271,36 @@ The macro defines a `CtxRef` struct:
 
 ```rust
 #[repr(C)]
-pub struct CtxRef<'t, geometry: Access, material: Access, mesh: Access, scene: Access> {
-    geometry: Value<'t, geometry, GeometryCtx>,
-    material: Value<'t, material, MaterialCtx>,
-    mesh:     Value<'t, mesh,     MeshCtx>,
-    scene:    Value<'t, scene,    SceneCtx>,
+pub struct CtxRef<Geometry, Material, Mesh, Scene> {
+    geometry: Geometry,
+    material: Material,
+    mesh:     Mesh,
+    scene:    Scene,
 }
 ```
 
-The `Value` type adapts to either a reference, a mutable reference, or an inaccessible private mutable pointer, based on parameterization:
+Each type variable will be instantiated with one of `&`, `&mut`, or `Hidden`:
 
 ```rust
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct NoAccess<T>(*mut T);
-
-pub trait Access            { type Value<'t, T: 't + Debug>: Debug; }
-impl      Access for Ref    { type Value<'t, T: 't + Debug> = &'t T; }
-impl      Access for RefMut { type Value<'t, T: 't + Debug> = &'t mut T; }
-impl      Access for None   { type Value<'t, T: 't + Debug> = NoAccess<T>; }
-
-pub type Value<'t, L, T> = <L as Access>::Value<'t, T>;
+pub struct Hidden<T>(*mut T);
 ```
 
 The macro generates `as_ref_mut` and `as_refs` methods for flexible reference creation:
 
 ```rust
 impl Ctx {
-    pub fn as_ref_mut<'t>(&'t mut self) -> CtxRef<'t, RefMut, RefMut, RefMut, RefMut> {
+    pub fn as_ref_mut(mut self) -> CtxRef<
+          &mut GeometryCtx, 
+          &mut MaterialCtx,
+          &mut MeshCtx,
+          &mut SceneCtx
+    > {
         // ...
     }
     
-    // T is a parametrized `CtxRef` struct. Bounds skipped for brevity.
+    // T is a parametrized `CtxRef` struct, so it can be useed as. Bounds skipped for brevity.
     pub fn as_refs<T>(&self) -> T where /*...*/ {
         // ...
     }
@@ -241,8 +333,6 @@ impl CtxRef</*...*/> {
     }
 }
 ```
-
-Finally, the macro generates the `Ctx!` macro itself.
 
 ## ⚠️ Limitations
 Currently, the macro works only with non-parametrized structures. For parameterized structures, please create an issue or submit a PR.
