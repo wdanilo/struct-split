@@ -1,12 +1,12 @@
 [package]
-name = "struct-split-macro"
-version = "0.1.2"
+name = "borrow-macro"
+version = "0.1.3"
 authors = ["Wojciech Danilo <wojciech.danilo@gmail.com>"]
-description = "Helper for struct-split crate."
+description = "Helper for the borrow crate."
 edition = "2021"
 keywords = ["macros"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/wdanilo/struct-split"
+repository = "https://github.com/wdanilo/borrow"
 
 [lib]
 proc-macro = true

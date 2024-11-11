@@ -1,13 +1,17 @@
-use struct_split::Split;
+use borrow::PartialBorrow;
+
+// ============
+// === Data ===
+// ============
 
 #[derive(Debug, Default)]
-pub struct GeometryCtx {
-    pub data: Vec<String>
+pub struct Geometry {
+    label: String,
 }
 
 #[derive(Debug, Default)]
-pub struct MaterialCtx {
-    pub data: Vec<String>
+pub struct Material {
+    label: String,
 }
 
 #[derive(Debug, Default)]
@@ -17,13 +21,27 @@ pub struct Mesh {
 }
 
 #[derive(Debug, Default)]
-pub struct MeshCtx {
-    pub data: Vec<Mesh>,
+pub struct Scene {
+    pub meshes: Vec<usize>,
+}
+
+// ==================
+// === Registries ===
+// ==================
+
+#[derive(Debug, Default)]
+pub struct GeometryCtx {
+    pub data: Vec<Geometry>,
 }
 
 #[derive(Debug, Default)]
-pub struct Scene {
-    pub meshes: Vec<usize>,
+pub struct MaterialCtx {
+    pub data: Vec<Material>,
+}
+
+#[derive(Debug, Default)]
+pub struct MeshCtx {
+    pub data: Vec<Mesh>,
 }
 
 #[derive(Debug, Default)]
@@ -31,7 +49,11 @@ pub struct SceneCtx {
     pub data: Vec<Scene>,
 }
 
-#[derive(Debug, Default, Split)]
+// =====================
+// === Root Registry ===
+// =====================
+
+#[derive(Debug, Default, PartialBorrow)]
 #[module(crate::data)]
 pub struct Ctx {
     pub geometry: GeometryCtx,
@@ -41,13 +63,15 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    pub fn new_geometry(&mut self, data: &str) -> usize {
-        self.geometry.data.push(data.to_string());
+    pub fn new_geometry(&mut self, label: &str) -> usize {
+        let label = label.to_string();
+        self.geometry.data.push(Geometry { label });
         self.geometry.data.len() - 1
     }
 
-    pub fn new_material(&mut self, data: &str) -> usize {
-        self.material.data.push(data.to_string());
+    pub fn new_material(&mut self, label: &str) -> usize {
+        let label = label.to_string();
+        self.material.data.push(Material { label });
         self.material.data.len() - 1
     }
 
@@ -57,7 +81,8 @@ impl Ctx {
     }
 
     pub fn new_scene(&mut self, meshes: &[usize]) -> usize {
-        self.scene.data.push(Scene { meshes: meshes.to_vec() });
+        let meshes = meshes.to_vec();
+        self.scene.data.push(Scene { meshes });
         self.scene.data.len() - 1
     }
 

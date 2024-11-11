@@ -1,17 +1,17 @@
 [package]
-name = "struct-split"
-version = "0.1.2"
+name = "borrow"
+version = "0.1.3"
 authors = ["Wojciech Danilo <wojciech.danilo@gmail.com>"]
-description = "Efficiently split struct fields into distinct subsets of references, ensuring zero overhead and strict borrow checker compliance (non-overlapping mutable references)."
+description = "Zero-overhead, safe implementation of partial borrows. This crate allows you to borrow selected fields from a struct and split structs into non-overlapping sets of borrowed fields."
 edition = "2021"
-keywords = ["macros", "struct", "split", "fields", "references"]
+keywords = ["struct", "borrow", "partial", "fields", "references"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/wdanilo/struct-split"
+repository = "https://github.com/wdanilo/borrow"
 
 [lib]
 
 [dependencies]
-struct-split-macro = { version = "0.1.2", path = "../macro" }
+borrow-macro = { version = "0.1.3", path = "../macro" }
 
 [lints]
 workspace = true
