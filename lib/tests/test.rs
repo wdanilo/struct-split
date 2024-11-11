@@ -3,11 +3,11 @@
 mod data;
 
 use data::Ctx;
-use struct_split::partial_borrow as p;
+use borrow::partial_borrow as p;
 
-use struct_split::traits::*;
-use struct_split::UnifyImpl;
-use struct_split::Union;
+use borrow::traits::*;
+use borrow::UnifyImpl;
+use borrow::Union;
 
 // =============
 // === Tests ===

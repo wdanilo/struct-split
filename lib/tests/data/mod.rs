@@ -1,4 +1,4 @@
-use struct_split::PartialBorrow;
+use borrow::PartialBorrow;
 
 // ============
 // === Data ===

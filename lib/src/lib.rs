@@ -4,7 +4,7 @@ use hlist::Cons;
 use hlist::Nil;
 
 use std::fmt::Debug;
-pub use struct_split_macro::*;
+pub use borrow_macro::*;
 
 
 // ==============
