@@ -33,3 +33,14 @@ macro_rules! hlist {
         }
     };
 }
+
+#[macro_export]
+macro_rules! hlist_pat {
+    () => { $crate::hlist::Nil };
+    ($a:pat $(,$($tok:tt)*)?) => {
+        $crate::hlist::Cons {
+            head: $a,
+            tail: $crate::hlist_pat!{$($($tok)*)?},
+        }
+    };
+}

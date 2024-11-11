@@ -47,8 +47,8 @@ fn extract_module_attr(input: &DeriveInput) -> Path {
 ///     scene: SceneCtx,
 /// }
 /// ```
-#[proc_macro_derive(Split, attributes(module))]
-pub fn split_derive(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(PartialBorrow, attributes(module))]
+pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
     let lib = crate_name();
     let input = parse_macro_input!(input as DeriveInput);
     let module = extract_module_attr(&input);
@@ -121,7 +121,7 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
 
     // Generates:
     // impl Ctx {
-    //     pub fn as_ref_mut(&mut self) -> CtxRef<&mut GeometryCtx, &mut MaterialCtx, &mut MeshCtx, &mut SceneCtx> {
+    //     pub fn as_refs_mut(&mut self) -> CtxRef<&mut GeometryCtx, &mut MaterialCtx, &mut MeshCtx, &mut SceneCtx> {
     //         CtxRef {
     //             geometry: &mut self.geometry,
     //             material: &mut self.material,
@@ -130,12 +130,12 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
     //         }
     //     }
     // }
-    let impl_as_ref_mut = {
+    let impl_as_refs_mut = {
         quote! {
             #[allow(non_camel_case_types)]
             impl #struct_ident {
                 #[inline(always)]
-                pub fn as_ref_mut(&mut self) -> #ref_struct_ident<#(&mut #field_types,)*> {
+                pub fn as_refs_mut(&mut self) -> #ref_struct_ident<#(&mut #field_types,)*> {
                     #ref_struct_ident {
                         #(#field_idents: &mut self.#field_idents,)*
                     }
@@ -148,6 +148,9 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
     // impl<geometry, material, mesh, scene>
     // IntoFields for CtxRef<geometry, material, mesh, scene> {
     //     type Fields = HList![geometry, material, mesh, scene];
+    //     fn into_fields(self) -> Self::Fields {
+    //         hlist![self.geometry, self.material, self.mesh, self.scene]
+    //     }
     // }
     let impl_into_fields = {
         quote! {
@@ -155,6 +158,10 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
             impl<#(#params,)*>
             #lib::IntoFields for #ref_struct_ident<#(#params,)*> {
                 type Fields = #lib::HList!{#(#params,)*};
+                fn into_fields(&mut self) -> Self::Fields {
+                    panic!()
+                    // #lib::hlist![#(&mut self.#field_idents,)*]
+                }
             }
         }
     };
@@ -165,6 +172,10 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
     // FromFields<HList![geometry_target, material_target, mesh_target, scene_target]>
     // for CtxRef<geometry, material, mesh, scene> {
     //     type Result = CtxRef<geometry_target, material_target, mesh_target, scene_target>;
+    //     fn from_fields(fields: HList![geometry_target, material_target, mesh_target, scene_target]) -> Self::Result {
+    //         let hlist![geometry, material, mesh, scene] = fields;
+    //         CtxRef { geometry, material, mesh, scene }
+    //     }
     // }
     let impl_from_fields = {
         let target_params = params.iter().map(|i| Ident::new(&format!("{i}_target"), i.span())).collect_vec();
@@ -173,6 +184,10 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
             impl<#(#params,)* #(#target_params,)*>
             #lib::FromFields<#lib::HList!{#(#target_params,)*}> for #ref_struct_ident<#(#params,)*> {
                 type Result = #ref_struct_ident<#(#target_params,)*>;
+                fn from_fields(fields: #lib::HList!{#(#target_params,)*}) -> Self::Result {
+                    let #lib::hlist_pat![#(#field_idents,)*] = fields;
+                    #ref_struct_ident { #(#field_idents,)* }
+                }
             }
         }
     };
@@ -314,9 +329,9 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
     // 't4: 't3
     // {
     //     pub fn extract_geometry(&'t1 mut self)
-    //         -> (&'t2 mut GeometryCtx, &'t3 mut <Self as Split<Ctx!['t4, mut geometry]>>::Rest)
+    //         -> (&'t2 mut GeometryCtx, &'t3 mut <Self as PartialBorrow<Ctx!['t4, mut geometry]>>::Rest)
     //     where geometry: Acquire<&'t4 mut GeometryCtx> {
-    //         let (a, b) = <Self as Split<Ctx! ['t4, mut geometry]>>::split_impl(self);
+    //         let (a, b) = <Self as PartialBorrow<Ctx! ['t4, mut geometry]>>::split_impl(self);
     //         (a.geometry, b)
     //     }
     //
@@ -328,9 +343,9 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
             let name = Ident::new(&format!("extract_{field}"), field.span());
             quote! {
                 #[inline(always)]
-                pub fn #name(&'_t1 mut self) -> (&'_t2 mut #ty, &'_t3 mut <Self as #lib::Split<#struct_ident!['_t4, mut #field]>>::Rest)
+                pub fn #name(&'_t1 mut self) -> (&'_t2 mut #ty, &'_t3 mut <Self as #lib::PartialBorrow<#struct_ident!['_t4, mut #field]>>::Rest)
                 where #field: #lib::Acquire<&'_t4 mut #ty> {
-                    let (a, b) = <Self as #lib::Split<#struct_ident!['_t4, mut #field]>>::split_impl(self);
+                    let (a, b) = <Self as #lib::PartialBorrow<#struct_ident!['_t4, mut #field]>>::split_impl(self);
                     (a.#field, b)
                 }
             }
@@ -351,7 +366,7 @@ pub fn split_derive(input: TokenStream) -> TokenStream {
     let out = quote! {
         #ref_struct
         #impl_as_refs
-        #impl_as_ref_mut
+        #impl_as_refs_mut
         #ref_macro
         #impl_extract_fields
         #impl_into_fields

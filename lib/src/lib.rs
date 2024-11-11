@@ -6,18 +6,36 @@ use hlist::Nil;
 use std::fmt::Debug;
 pub use struct_split_macro::*;
 
+
 // ==============
 // === Traits ===
 // ==============
 
 pub mod traits {
     pub use super::Acquire as _;
-    pub use super::Split as _;
-    pub use super::SplitHelper as _;
+    pub use super::PartialBorrow as _;
+    pub use super::PartialBorrowHelper as _;
     pub use super::RefCast as _;
     pub use super::AsRefs as _;
     pub use super::AsRefsHelper as _;
 }
+
+
+// =======================
+// === Struct Generics ===
+// =======================
+
+pub trait IntoFields {
+    type Fields;
+    fn into_fields(&mut self) -> Self::Fields;
+}
+type Fields<T> = <T as IntoFields>::Fields;
+
+pub trait FromFields<Fields> {
+    type Result;
+    fn from_fields(fields: Fields) -> Self::Result;
+}
+type WithFields<T, Fields> = <T as FromFields<Fields>>::Result;
 
 
 // =========================
@@ -66,19 +84,101 @@ impl<'t: 's, 's, T> Acquire<&'s     T> for &'t     T { type Rest = &'t T; }
 pub type Acquired<This, Target> = <This as Acquire<Target>>::Rest;
 
 
-// ==============
-// === Fields ===
-// ==============
 
-pub trait IntoFields { type Fields; }
-type Fields<T> = <T as IntoFields>::Fields;
 
-pub trait FromFields<Fields> { type Result; }
-type WithFields<T, Fields> = <T as FromFields<Fields>>::Result;
+// impl<X, T1, T2> JoinField<Cons<Hidden<X>, T2>> for Cons<Hidden<X>, T1>
+// where T1: JoinField<T2> {
+//     type Result = Cons<Hidden<X>, <T1 as JoinField<T2>>::Result>;
+//     fn join_field(self, other: Cons<Hidden<X>, T2>) -> Self::Result {
+//         Cons { head: self.head, tail: self.tail.join_field(other.tail) }
+//     }
+// }
 
-// =============
-// === Split ===
-// =============
+pub trait JoinField<Other> {
+    type Result;
+    fn join_field(self, other: Other) -> Self::Result;
+}
+
+
+pub trait JoinFields<Other> {
+    type Result;
+    fn join_fields(self, other: Other) -> Self::Result;
+}
+
+impl JoinFields<Nil> for Nil where {
+    type Result = Nil;
+    fn join_fields(self, _: Nil) -> Self::Result {
+        Nil
+    }
+}
+
+impl<A, B, T1, T2> JoinFields<Cons<B, T2>> for Cons<A, T1> where
+    T1: JoinFields<T2>,
+    A: JoinField<B>,
+{
+    type Result = Cons<<A as JoinField<B>>::Result, <T1 as JoinFields<T2>>::Result>;
+    fn join_fields(self, other: Cons<B, T2>) -> Self::Result {
+        Cons { head: self.head.join_field(other.head), tail: self.tail.join_fields(other.tail) }
+    }
+}
+
+
+// === for Hidden<T> ===
+
+impl<T> JoinField<Hidden<T>> for Hidden<T> {
+    type Result = Hidden<T>;
+    fn join_field(self, _: Hidden<T>) -> Self::Result { self }
+}
+
+impl<'t, T> JoinField<&'t T> for Hidden<T> {
+    type Result = &'t T;
+    fn join_field(self, other: &'t T) -> Self::Result { other }
+}
+
+impl<'t, T> JoinField<&'t mut T> for Hidden<T> {
+    type Result = &'t mut T;
+    fn join_field(self, other: &'t mut T) -> Self::Result { other }
+}
+
+// === for &'s T ===
+
+impl<'s, T> JoinField<Hidden<T>> for &'s T {
+    type Result = &'s T;
+    fn join_field(self, _: Hidden<T>) -> Self::Result { self }
+}
+
+impl<'t, 's, T> JoinField<&'t T> for &'s T {
+    type Result = &'s T;
+    fn join_field(self, _: &'t T) -> Self::Result { self }
+}
+
+impl<'t, 's, T> JoinField<&'t mut T> for &'s T {
+    type Result = &'t mut T;
+    fn join_field(self, other: &'t mut T) -> Self::Result { other }
+}
+
+// === for &'s mut T ===
+
+impl<'s, T> JoinField<Hidden<T>> for &'s mut T {
+    type Result = &'s mut T;
+    fn join_field(self, _: Hidden<T>) -> Self::Result { self }
+}
+
+impl<'t, 's, T> JoinField<&'t T> for &'s mut T {
+    type Result = &'s mut T;
+    fn join_field(self, _: &'t T) -> Self::Result { self }
+}
+
+impl<'t, 's, T> JoinField<&'t mut T> for &'s mut T {
+    type Result = &'s mut T;
+    fn join_field(self, _: &'t mut T) -> Self::Result { self }
+}
+
+
+
+// ===================
+// === SplitFields ===
+// ===================
 
 pub trait SplitFields<Target> { type Rest; }
 type SplitFieldsRest<T, Target> = <T as SplitFields<Target>>::Rest;
@@ -93,16 +193,21 @@ T: SplitFields<T2> {
     type Rest = Cons<Acquired<H, H2>, <T as SplitFields<T2>>::Rest>;
 }
 
-pub trait Split<Target> {
+
+// =====================
+// === PartialBorrow ===
+// =====================
+
+pub trait PartialBorrow<Target> {
     type Rest;
 
     #[inline(always)]
-    fn fit_impl(&mut self) -> &mut Target {
+    fn partial_borrow_impl(&mut self) -> &mut Target {
         unsafe { &mut *(self as *mut _ as *mut _) }
     }
 
     #[inline(always)]
-    fn fit_rest_impl(&mut self) -> &mut Self::Rest {
+    fn partial_borrow_rest_impl(&mut self) -> &mut Self::Rest {
         unsafe { &mut *(self as *mut _ as *mut _) }
     }
 
@@ -114,7 +219,7 @@ pub trait Split<Target> {
     }
 }
 
-impl<Source, Target> Split<Target> for Source where
+impl<Source, Target> PartialBorrow<Target> for Source where
 Source: IntoFields,
 Target: IntoFields,
 Fields<Source>: SplitFields<Fields<Target>>,
@@ -122,21 +227,41 @@ Target: FromFields<SplitFieldsRest<Fields<Source>, Fields<Target>>> {
     type Rest = WithFields<Target, SplitFieldsRest<Fields<Source>, Fields<Target>>>;
 }
 
-impl<T> SplitHelper for T {}
-pub trait SplitHelper {
+impl<T> PartialBorrowHelper for T {}
+pub trait PartialBorrowHelper {
     #[inline(always)]
-    fn fit<Target>(&mut self) -> &mut Target
-    where Self: Split<Target> { self.fit_impl() }
+    fn partial_borrow<Target>(&mut self) -> &mut Target
+    where Self: PartialBorrow<Target> { self.partial_borrow_impl() }
 
     #[inline(always)]
-    fn fit_rest<Target>(&mut self) -> &mut Self::Rest
-    where Self: Split<Target> { self.fit_rest_impl() }
+    fn partial_borrow_rest<Target>(&mut self) -> &mut Self::Rest
+    where Self: PartialBorrow<Target> { self.partial_borrow_rest_impl() }
 
     #[inline(always)]
     fn split<Target>(&mut self) -> (&mut Target, &mut Self::Rest)
-    where Self: Split<Target> { self.split_impl() }
+    where Self: PartialBorrow<Target> { self.split_impl() }
 }
 
+
+// ============
+// === Join ===
+// ============
+
+pub trait Join<Other> {
+    type Result;
+    fn join(&mut self, other: &mut Other) -> &mut Self::Result;
+}
+
+// impl<This, That> Join<That> for This where
+//     This: IntoFields,
+//     That: IntoFields,
+//     Fields<This>: JoinFields<Fields<That>>,
+//     That: FromFields<<Fields<This> as JoinFields<Fields<That>>>::Result> {
+//     type Result = WithFields<That, <Fields<This> as JoinFields<Fields<That>>>::Result>;
+//     fn join(&mut self, other: &mut That) -> &mut Self::Result {
+//         self.into_fields();
+//     }
+// }
 
 // ==============
 // === AsRefs ===
@@ -153,6 +278,7 @@ pub trait AsRefsHelper<'t> {
     where Self: AsRefs<'t, T> { self.as_refs_impl() }
 }
 
+
 // ==============
 // === Macros ===
 // ==============
@@ -165,8 +291,7 @@ macro_rules! lifetime_chooser {
 
 #[macro_export]
 macro_rules! partial_borrow {
-    (& < $($ts:tt)*)              => { $crate::partial_borrow! { @ '_  [] $($ts)* } };
-    (& $lt:lifetime < $($ts:tt)*) => { $crate::partial_borrow! { @ $lt [] $($ts)* } };
-    (@ $lt:lifetime [$($xs:tt)*] > $t:ident) => { & $lt mut $t! { $($xs)* } };
-    (@ $lt:lifetime [$($xs:tt)*] $t:tt $($ts:tt)*) => { $crate::partial_borrow! { @ $lt [$($xs)* $t] $($ts)* } };
+    (< $($ts:tt)*)                    => { $crate::partial_borrow! { @ [] $($ts)* } };
+    (@ [$($xs:tt)*] > $t:ident)       => { $t! { $($xs)* } };
+    (@ [$($xs:tt)*] $t:tt $($ts:tt)*) => { $crate::partial_borrow! { @ [$($xs)* $t] $($ts)* } };
 }

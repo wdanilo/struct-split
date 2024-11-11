@@ -3,7 +3,7 @@
 mod data;
 
 use data::Ctx;
-use struct_split::partial_borrow as b;
+use struct_split::partial_borrow as p;
 
 use struct_split::traits::*;
 
@@ -14,20 +14,20 @@ use struct_split::traits::*;
 #[test]
 fn test_types() {
     let mut ctx = Ctx::mock();
-    render(ctx.as_ref_mut().fit());
+    render(ctx.as_refs_mut().partial_borrow());
 }
 
-fn render(ctx: b!(&<mut *> Ctx)) {
-    render_scene(ctx.fit(), 0);
+fn render(ctx: &mut p!(<mut *> Ctx)) {
+    render_scene(ctx.partial_borrow(), 0);
     let (scene, ctx) = ctx.extract_scene();
     for scene in &scene.data {
         for mesh in &scene.meshes {
-            render_scene(ctx.fit(), *mesh)
+            render_scene(ctx.partial_borrow(), *mesh)
         }
     }
 }
 
-fn render_scene(_ctx: b!(&<mesh, mut geometry, mut material> Ctx), _mesh: usize) {
+fn render_scene(_ctx: &mut p!(<mesh, mut geometry, mut material> Ctx), _mesh: usize) {
     // ...
 }
 
