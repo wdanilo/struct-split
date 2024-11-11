@@ -322,20 +322,20 @@ The partially borrowed struct also provides methods for concatenating partial bo
 impl CtxRef</* ... */> {
     /// Concatenates the current partial borrow with 
     /// another one.
-    fn join<Other>(&mut self, other: &mut Other) 
-       -> Joined<Self, Other> {
+    fn union<Other>(&mut self, other: &mut Other) 
+       -> Union<Self, Other> {
         // ...
     }
 }
 
-/// The `Joined` type is particularly useful when defining 
+/// The `Union` type is particularly useful when defining 
 /// type aliases.
 type RenderCtx<'t> = p!(<'t, scene> Ctx);
 type GlyphCtx<'t> = p!(<'t, geometry, material, mesh> Ctx);
-type GlyphRenderCtx<'t> = Joined<RenderCtx<'t>, GlyphCtx<'t>>;
+type GlyphRenderCtx<'t> = Union<RenderCtx<'t>, GlyphCtx<'t>>;
 ```
 
-Please note, that while the `join` operation might seem useful, in most cases it is better to re-structure your code to avoid it. For example, let's consider the previous implementation of `render_pass1`: 
+Please note, that while the `union` operation might seem useful, in most cases it is better to re-structure your code to avoid it. For example, let's consider the previous implementation of `render_pass1`: 
 
 ```rust
 fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
@@ -349,7 +349,7 @@ fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
 }
 ```
 
-It could also be implemented using explicit split and join, but it would make the code less readable:
+It could also be implemented using explicit split and union, but it would make the code less readable:
 
 ```rust
 fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
@@ -361,8 +361,8 @@ fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
         }
     }
     // Because the original var is inaccessible, we need to
-    // join the parts back together.
-    let mut ctx = ctx.join(&scene_ctx);
+    // unify the parts back together.
+    let mut ctx = ctx.union(&scene_ctx);
     render_pass2(&mut ctx);
 }
 ```

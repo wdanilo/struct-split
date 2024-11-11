@@ -166,138 +166,135 @@ pub trait PartialBorrowHelper {
 }
 
 
-// =================
-// === JoinField ===
-// =================
+// ==================
+// === UnifyField ===
+// ==================
 
-pub trait JoinField<'t, Other> {
+pub trait UnifyField<Other> { type Result; }
+
+impl<'t, T> UnifyField<Hidden<T>> for Hidden<T> { type Result = Hidden<T>; }
+impl<'t, T> UnifyField<&'t     T> for Hidden<T> { type Result = &'t     T; }
+impl<'t, T> UnifyField<&'t mut T> for Hidden<T> { type Result = &'t mut T; }
+
+impl<'t, T> UnifyField<Hidden<T>> for &'t T { type Result = &'t     T; }
+impl<'t, T> UnifyField<&'t     T> for &'t T { type Result = &'t     T; }
+impl<'t, T> UnifyField<&'t mut T> for &'t T { type Result = &'t mut T; }
+
+impl<'t, T> UnifyField<Hidden<T>> for &'t mut T { type Result = &'t mut T; }
+impl<'t, T> UnifyField<&'t     T> for &'t mut T { type Result = &'t mut T; }
+impl<'t, T> UnifyField<&'t mut T> for &'t mut T { type Result = &'t mut T; }
+
+type ConcatenatedField<T, Other> = <T as UnifyField<Other>>::Result;
+
+
+// ====================
+// === UnifyFields ===
+// ====================
+
+pub trait UnifyFields<Other> { type Result; }
+type ConcatFieldsResult<T, Other> = <T as UnifyFields<Other>>::Result;
+
+impl UnifyFields<Nil> for Nil {
+    type Result = Nil;
+}
+
+impl<H, H2, T, T2> UnifyFields<Cons<H2, T2>> for Cons<H, T> where
+    H: UnifyField<H2>,
+    T: UnifyFields<T2> {
+    type Result = Cons<ConcatenatedField<H, H2>, <T as UnifyFields<T2>>::Result>;
+}
+
+pub trait Unify<Other> {
     type Result;
-    fn join_field(&'t mut self, other: &'t mut Other) -> Self::Result;
+}
+
+impl<Source, Other> Unify<Other> for Source where
+    Source: HasFields,
+    Other: HasFields,
+    Fields<Source>: UnifyFields<Fields<Other>>,
+    Other: FromFields<ConcatFieldsResult<Fields<Source>, Fields<Other>>> {
+    type Result = WithFields<Other, ConcatFieldsResult<Fields<Source>, Fields<Other>>>;
+}
+
+pub type Union<T, Other> = <T as Unify<Other>>::Result;
+
+
+// ======================
+// === UnifyFieldImpl ===
+// ======================
+
+// NOTE:
+// This impl is pretty complex. Maybe it is possible to parametrize everything differently
+// to make it nicer.
+pub trait UnifyFieldImpl<'t, Other> {
+    type Result;
+    fn unify_field(&'t mut self, other: &'t mut Other) -> Self::Result;
 }
 
 // === for Hidden<T> ===
 
-impl<'t, T> JoinField<'t, Hidden<T>> for Hidden<T> {
+impl<'t, T> UnifyFieldImpl<'t, Hidden<T>> for Hidden<T> {
     type Result = Hidden<T>;
-    fn join_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { *self }
+    fn unify_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { *self }
 }
 
-impl<'t, 's, T> JoinField<'t, &'s T> for Hidden<T> {
+impl<'t, 's, T> UnifyFieldImpl<'t, &'s T> for Hidden<T> {
     type Result = &'s T;
-    fn join_field(&'t mut self, other: &'t mut &'s T) -> Self::Result { other }
+    fn unify_field(&'t mut self, other: &'t mut &'s T) -> Self::Result { other }
 }
 
-impl<'t, 's, T: 't> JoinField<'t, &'s mut T> for Hidden<T> {
+impl<'t, 's, T: 't> UnifyFieldImpl<'t, &'s mut T> for Hidden<T> {
     type Result = &'t mut T;
-    fn join_field(&'t mut self, other: &'t mut &'s mut T) -> Self::Result { other }
+    fn unify_field(&'t mut self, other: &'t mut &'s mut T) -> Self::Result { other }
 }
 
 // === for &'s T ===
 
-impl<'t, 's, T> JoinField<'t, Hidden<T>> for &'s T {
+impl<'t, 's, T> UnifyFieldImpl<'t, Hidden<T>> for &'s T {
     type Result = &'s T;
-    fn join_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { self }
+    fn unify_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { self }
 }
 
-impl<'t, 's, T> JoinField<'t, &'s T> for &'s T {
+impl<'t, 's, T> UnifyFieldImpl<'t, &'s T> for &'s T {
     type Result = &'s T;
-    fn join_field(&'t mut self, _: &'t mut &'s T) -> Self::Result { self }
+    fn unify_field(&'t mut self, _: &'t mut &'s T) -> Self::Result { self }
 }
 
-impl<'t, 's, T: 't> JoinField<'t, &'s mut T> for &'s T {
+impl<'t, 's, T: 't> UnifyFieldImpl<'t, &'s mut T> for &'s T {
     type Result = &'t mut T;
-    fn join_field(&'t mut self, other: &'t mut &'s mut T) -> Self::Result { other }
+    fn unify_field(&'t mut self, other: &'t mut &'s mut T) -> Self::Result { other }
 }
 
 // === for &'s mut T ===
 
-impl<'t, 's, T: 't> JoinField<'t, Hidden<T>> for &'s mut T {
+impl<'t, 's, T: 't> UnifyFieldImpl<'t, Hidden<T>> for &'s mut T {
     type Result = &'t mut T;
-    fn join_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { self }
+    fn unify_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { self }
 }
 
-impl<'t, 's, T: 't> JoinField<'t, &'s T> for &'s mut T {
+impl<'t, 's, T: 't> UnifyFieldImpl<'t, &'s T> for &'s mut T {
     type Result = &'t mut T;
-    fn join_field(&'t mut self, _: &'t mut &'s T) -> Self::Result { self }
+    fn unify_field(&'t mut self, _: &'t mut &'s T) -> Self::Result { self }
 }
 
-impl<'t, 's, T: 't> JoinField<'t, &'s mut T> for &'s mut T {
+impl<'t, 's, T: 't> UnifyFieldImpl<'t, &'s mut T> for &'s mut T {
     type Result = &'t mut T;
-    fn join_field(&'t mut self, _: &'t mut &'s mut T) -> Self::Result { self }
+    fn unify_field(&'t mut self, _: &'t mut &'s mut T) -> Self::Result { self }
 }
 
 
 // =================
-// === JoinField2 ===
+// === UnifyImpl ===
 // =================
 
-pub trait JoinField2<'t, Other> {
+pub trait UnifyImpl<Other> {
     type Result;
-    fn join_field(&'t mut self, other: &'t mut Other) -> Self::Result;
+    fn union(self, other: Other) -> Self::Result;
 }
 
-// === for Hidden<T> ===
-
-impl<'t, T> crate::JoinField2<'t, Hidden<T>> for Hidden<T> {
-    type Result = Hidden<T>;
-    fn join_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { *self }
-}
-
-impl<'t, 's, T> crate::JoinField2<'t, &'s T> for Hidden<T> {
-    type Result = &'s T;
-    fn join_field(&'t mut self, other: &'t mut &'s T) -> Self::Result { other }
-}
-
-impl<'t, 's, T: 't> crate::JoinField2<'t, &'s mut T> for Hidden<T> {
-    type Result = &'t mut T;
-    fn join_field(&'t mut self, other: &'t mut &'s mut T) -> Self::Result { other }
-}
-
-// === for &'s T ===
-
-impl<'t, 's, T> crate::JoinField2<'t, Hidden<T>> for &'s T {
-    type Result = &'s T;
-    fn join_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { self }
-}
-
-impl<'t, 's, T> crate::JoinField2<'t, &'s T> for &'s T {
-    type Result = &'s T;
-    fn join_field(&'t mut self, _: &'t mut &'s T) -> Self::Result { self }
-}
-
-impl<'t, 's, T: 't> crate::JoinField2<'t, &'s mut T> for &'s T {
-    type Result = &'t mut T;
-    fn join_field(&'t mut self, other: &'t mut &'s mut T) -> Self::Result { other }
-}
-
-// === for &'s mut T ===
-
-impl<'t, 's, T: 't> crate::JoinField2<'t, Hidden<T>> for &'s mut T {
-    type Result = &'t mut T;
-    fn join_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { self }
-}
-
-impl<'t, 's, T: 't> crate::JoinField2<'t, &'s T> for &'s mut T {
-    type Result = &'t mut T;
-    fn join_field(&'t mut self, _: &'t mut &'s T) -> Self::Result { self }
-}
-
-impl<'t, 's, T: 't> crate::JoinField2<'t, &'s mut T> for &'s mut T {
-    type Result = &'t mut T;
-    fn join_field(&'t mut self, _: &'t mut &'s mut T) -> Self::Result { self }
-}
-
-
-// ============
-// === Join ===
-// ============
-
-pub trait Join<Other> {
-    type Result;
-    fn join(self, other: Other) -> Self::Result;
-}
-
-pub type Joined<T, Other> = <T as Join<Other>>::Result;
+// This should be the same as `Union`, but the implementation of `unify` requires
+// complex bounds, so `Union` uses simpler logic.
+pub type UnionImpl<T, Other> = <T as UnifyImpl<Other>>::Result;
 
 
 // ==============

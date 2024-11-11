@@ -181,16 +181,16 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
     // impl<'t, geometry, material, mesh, scene, geometry_other, material_other, mesh_other, scene_other>
     // Join<&'t mut CtxRef<geometry_other, material_other, mesh_other, scene_other>>
     // for &'t mut CtxRef<geometry, material, mesh, scene> where
-    //     geometry: JoinField<'t, geometry2>,
-    //     material: JoinField<'t, material2>,
-    //     mesh: JoinField<'t, mesh2>,
-    //     scene: JoinField<'t, scene2>,
+    //     geometry: UnifyFieldImpl<'t, geometry2>,
+    //     material: UnifyFieldImpl<'t, material2>,
+    //     mesh: UnifyFieldImpl<'t, mesh2>,
+    //     scene: UnifyFieldImpl<'t, scene2>,
     // {
     //     type Result = CtxRef<
-    //         <geometry as JoinField<'t, geometry_other>>::Result,
-    //         <material as JoinField<'t, material_other>>::Result,
-    //         <mesh as JoinField<'t, mesh_other>>::Result,
-    //         <scene as JoinField<'t, scene_other>>::Result,
+    //         <geometry as UnifyFieldImpl<'t, geometry_other>>::Result,
+    //         <material as UnifyFieldImpl<'t, material_other>>::Result,
+    //         <mesh as UnifyFieldImpl<'t, mesh_other>>::Result,
+    //         <scene as UnifyFieldImpl<'t, scene_other>>::Result,
     //     >;
     //     fn join(self, other: &'t mut CtxRef<geometry_other, material_other, mesh_other, scene_other>) -> Self::Result {
     //         let geometry = self.geometry.join_field(&mut other.geometry);
@@ -205,15 +205,15 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
         quote! {
             #[allow(non_camel_case_types)]
             impl<'_t, #(#params,)* #(#other_params,)*>
-            #lib::Join<&'_t mut #ref_struct_ident<#(#other_params,)*>> for &'_t mut #ref_struct_ident<#(#params,)*>
+            #lib::UnifyImpl<&'_t mut #ref_struct_ident<#(#other_params,)*>> for &'_t mut #ref_struct_ident<#(#params,)*>
             where
-                #(#params: #lib::JoinField<'_t, #other_params>,)*
+                #(#params: #lib::UnifyFieldImpl<'_t, #other_params>,)*
             {
-                type Result = #ref_struct_ident<#(<#params as #lib::JoinField<'_t, #other_params>>::Result,)*>;
+                type Result = #ref_struct_ident<#(<#params as #lib::UnifyFieldImpl<'_t, #other_params>>::Result,)*>;
                 #[inline(always)]
-                fn join(self, other: &'_t mut #ref_struct_ident<#(#other_params,)*>) -> Self::Result {
+                fn union(self, other: &'_t mut #ref_struct_ident<#(#other_params,)*>) -> Self::Result {
                     #ref_struct_ident {
-                        #(#field_idents: #lib::JoinField::join_field(&mut self.#field_idents, &mut other.#field_idents),)*
+                        #(#field_idents: #lib::UnifyFieldImpl::unify_field(&mut self.#field_idents, &mut other.#field_idents),)*
                     }
                 }
             }

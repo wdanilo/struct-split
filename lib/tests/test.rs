@@ -6,8 +6,8 @@ use data::Ctx;
 use struct_split::partial_borrow as p;
 
 use struct_split::traits::*;
-use struct_split::Join;
-use struct_split::Joined;
+use struct_split::UnifyImpl;
+use struct_split::Union;
 
 // =============
 // === Tests ===
@@ -27,6 +27,7 @@ fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
         }
     }
     render_pass2(ctx);
+    render_pass3(ctx.partial_borrow());
 }
 
 fn render_pass1_alt(ctx: &mut p!(<mut *> Ctx)) {
@@ -36,11 +37,13 @@ fn render_pass1_alt(ctx: &mut p!(<mut *> Ctx)) {
             render_scene(ctx2.partial_borrow(), *mesh)
         }
     }
-    let mut merged_ctx = ctx2.join(scene_ctx);
+    let mut merged_ctx = ctx2.union(scene_ctx);
     render_pass2(&mut merged_ctx);
 }
 
 fn render_pass2(ctx: &mut p!(<mut *> Ctx)) {}
+
+fn render_pass3(ctx: &mut GlyphRenderCtx) {}
 
 fn render_scene(_ctx: &mut p!(<mesh, mut geometry, mut material> Ctx), _mesh: usize) {
     // ...
@@ -49,4 +52,4 @@ fn render_scene(_ctx: &mut p!(<mesh, mut geometry, mut material> Ctx), _mesh: us
 
 type RenderCtx<'t> = p!(<'t, scene> Ctx);
 type GlyphCtx<'t> = p!(<'t, geometry, material, mesh> Ctx);
-type GlyphRenderCtx<'t> = Joined<RenderCtx<'t>, GlyphCtx<'t>>;
+type GlyphRenderCtx<'t> = Union<RenderCtx<'t>, GlyphCtx<'t>>;
