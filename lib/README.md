@@ -1,4 +1,4 @@
-# 🔪 Partial Borrow Implementation
+# 🔪 Partial Borrows
 
 Zero-overhead, safe implementation of [partial borrows](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020). This crate allows you to borrow selected fields from a struct and split structs into non-overlapping sets of borrowed fields. The splitting functionality is similar to [slice::split_at_mut](https://doc.rust-lang.org/std/primitive.slice.html#method.split_at_mut), but tailored for structs.
 
