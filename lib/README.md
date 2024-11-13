@@ -1,13 +1,119 @@
-# 🔪 Partial Borrows
+<p align="center">
+  <img width="460" src="https://github.com/user-attachments/assets/71b1ecae-7f39-4bb2-9a8e-6e9a7b9f06f5">
+</p>
 
-Zero-overhead, safe implementation of [partial borrows](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020). This crate allows you to borrow selected fields from a struct and split structs into non-overlapping sets of borrowed fields. The splitting functionality is similar to [slice::split_at_mut](https://doc.rust-lang.org/std/primitive.slice.html#method.split_at_mut), but tailored for structs.
+# 🧩 Partial Borrows
 
-# 😵‍💫 Problem
+Zero-overhead ["partial borrows"](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020), borrows of selected fields only, like `&<mut field1, mut field2>MyStruct`. It lets you split structs into non-overlapping sets of mutably borrowed fields. It's akin to [slice::split_at_mut](https://doc.rust-lang.org/std/primitive.slice.html#method.split_at_mut), but more flexible and tailored for structs.
 
-Suppose you're building a rendering engine that needs to store geometries, materials, meshes, and scenes. These entities form a reference graph (e.g., two meshes can use the same material). To handle this, you can either:
+<br/>
 
-- Use `Rc`/`Arc` to share ownership, which bypasses Rust's borrow checker and can make your code error-prone at runtime.
-- Store the entities in registries and use their indices as references.
+# 📌 TL;DR (Full documentation below)
+
+If you prefer a concise guide over reading the entire README, here's a quick setup demonstrating the core concepts. Important lines are marked with "⚠️". Copy the following code into your `lib.rs` or `main.rs`. Adjust the path in the `#[module(...)]` attribute if using in a module:
+
+
+```rust
+#![allow(dead_code)]
+
+use std::vec::Vec;
+use borrow::PartialBorrow;
+use borrow::partial_borrow as p;
+use borrow::traits::*;
+
+// ============
+// === Data ===
+// ============
+
+type NodeId = usize;
+type EdgeId = usize;
+
+#[derive(Debug)]
+struct Node {
+   outputs: Vec<EdgeId>,
+   inputs: Vec<EdgeId>,
+}
+
+#[derive(Debug)]
+struct Edge {
+   from: Option<NodeId>,
+   to: Option<NodeId>,
+}
+
+#[derive(Debug, PartialBorrow)] // ⚠️
+#[module(crate)] // ⚠️ USE HERE THE PATH TO MODULE OF THIS FILE
+struct Graph {
+   nodes: Vec<Node>,
+   edges: Vec<Edge>,
+}
+
+// =============
+// === Utils ===
+// =============
+
+// Requires mutable access to the `graph.edges` field.
+fn detach_node(
+   graph: &mut p!(<mut edges> Graph), // ⚠️
+   node: &mut Node
+) {
+   for edge_id in std::mem::take(&mut node.outputs) {
+      graph.edges[edge_id].from = None;
+   }
+   for edge_id in std::mem::take(&mut node.inputs) {
+      graph.edges[edge_id].to = None;
+   }
+}
+
+// Requires mutable access to all `graph` fields.
+fn detach_all_nodes(graph: &mut p!(<mut *> Graph)) { // ⚠️
+   // Extract the `nodes` field. The `graph2` variable has a type
+   // of `&mut p!(<mut *, !nodes> Graph)`.
+   let (nodes, graph2) = graph.extract_nodes(); // ⚠️
+   for node in nodes {
+      detach_node(graph2.partial_borrow(), node); // ⚠️
+   }
+}
+
+// =============
+// === Tests ===
+// =============
+
+#[test]
+fn test() {
+   // node0 -----> node1 -----> node2 -----> node0
+   //       edge0        edge1        edge2
+   let mut graph = Graph {
+      nodes: vec![
+         Node { outputs: vec![0], inputs: vec![2] }, // Node 0
+         Node { outputs: vec![1], inputs: vec![0] }, // Node 1
+         Node { outputs: vec![2], inputs: vec![1] }, // Node 2
+      ],
+      edges: vec![
+         Edge { from: Some(0), to: Some(1) }, // Edge 0
+         Edge { from: Some(1), to: Some(2) }, // Edge 1
+         Edge { from: Some(2), to: Some(0) }, // Edge 2
+      ],
+   };
+
+   detach_all_nodes(&mut graph.as_refs_mut().partial_borrow());
+
+   for node in &graph.nodes {
+      assert!(node.outputs.is_empty() && node.inputs.is_empty());
+   }
+   for edge in &graph.edges {
+      assert!(edge.from.is_none() && edge.to.is_none());
+   }
+}
+```
+
+<br/>
+
+# 😵‍💫 What problem does it solve?
+
+Consider a rendering engine requiring storage for geometries, materials, meshes, and scenes. These entities often form a reference graph (e.g., two meshes can use the same material). To handle this, you can either:
+
+- Use `Rc<RefCell<...>>`/`Arc<RefCell<...>>` for shared ownership, which risks runtime errors.
+- Store the entities in registries and use their indices as references. 
 
 We opt for the latter approach and create a root registry called `Ctx`:
 
@@ -15,8 +121,16 @@ We opt for the latter approach and create a root registry called `Ctx`:
 // === Data ===
 pub struct Geometry { /* ... */ }
 pub struct Material { /* ... */ }
-pub struct Mesh     { pub geometry: usize, pub material: usize }
-pub struct Scene    { pub meshes: Vec<usize> }
+pub struct Mesh     { 
+    /// Index of the geometry in the `GeometryCtx` registry.
+    pub geometry: usize,
+    /// Index of the material in the `MaterialCtx` registry.
+    pub material: usize 
+}
+pub struct Scene    { 
+    /// Indexes of meshes in the `MeshCtx` registry.
+    pub meshes: Vec<usize> 
+}
 
 // === Registries ===
 pub struct GeometryCtx { pub data: Vec<Geometry> }
@@ -24,7 +138,7 @@ pub struct MaterialCtx { pub data: Vec<Material> }
 pub struct MeshCtx     { pub data: Vec<Mesh> }
 pub struct SceneCtx    { pub data: Vec<Scene> }
 
-// === Global Registry ===
+// === Root Registry ===
 pub struct Ctx {
     pub geometry: GeometryCtx,
     pub material: MaterialCtx,
@@ -55,7 +169,7 @@ fn render_scene(ctx: &mut Ctx, mesh: usize) {
 }
 ```
 
-At first glance, this seems reasonable. However, it will be rejected by the compiler:
+At first glance, this might seem reasonable, but it will be rejected by the compiler:
 
 ```rust
 Cannot borrow `*ctx` as mutable because it is also borrowed as 
@@ -71,7 +185,7 @@ immutable:
 |          ^^^^^^^^^^^^^^^^^^^^^^^^ mutable borrow occurs here
 ```
 
-Passing each field separately works but becomes cumbersome and error-prone as the number of fields grows:
+Passing each field separately compiles, but becomes cumbersome and error-prone as the number of fields grows:
 
 ```rust
 fn render_pass1(
@@ -122,7 +236,7 @@ fn render_scene(
 }
 ```
 
-In real-world applications, this problem affects API design, making code hard to maintain and understand. This issue is also explored in the following sources:
+In real-world applications, this problem often affects API design, making code hard to maintain and understand. This issue was described multiple times over the years, some of the most notable discussions include:
 
 - [Rust Internals "Notes on partial borrow"](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020).
 - [The Rustonomicon "Splitting Borrows"](https://doc.rust-lang.org/nomicon/borrow-splitting.html).
@@ -132,11 +246,15 @@ In real-world applications, this problem affects API design, making code hard to
 - [HackMD "My thoughts on (and need for) partial borrows"](https://hackmd.io/J5aGp1ptT46lqLmPVVOxzg?view).
 - [Dozens of threads on different platforms](https://www.google.com/search?client=safari&rls=en&q=rust+multiple+mut+ref+struct+fields&ie=UTF-8&oe=UTF-8).
 
-## 🤩 Solution: Partial Borrow
+<br/>
+
+# 🤩 Partial borrows for the rescue!
 
 This crate provides the `partial_borrow` macro, which we recommend importing under a shorter alias for concise syntax:
 
 ```rust
+// CURRENT FILE: src/data.rs
+
 use struct_split::PartialBorrow;
 use struct_split::partial_borrow as p;
 use struct_split::traits::*;
@@ -205,24 +323,41 @@ The macro allows you to parameterize borrows similarly to how you parameterize t
 Let's apply these concepts to our rendering engine example:
 
 ```rust
+// CURRENT FILE: src/data.rs
+
 use struct_split::PartialBorrow;
 use struct_split::partial_borrow as p;
 use struct_split::traits::*;
 
-pub struct GeometryCtx { pub data: Vec<String> }
-pub struct MaterialCtx { pub data: Vec<String> }
-pub struct Mesh        { pub geometry: usize, pub material: usize }
+// === Data ===
+pub struct Geometry { /* ... */ }
+pub struct Material { /* ... */ }
+pub struct Mesh     {
+   /// Index of the geometry in the `GeometryCtx` registry.
+   pub geometry: usize,
+   /// Index of the material in the `MaterialCtx` registry.
+   pub material: usize
+}
+pub struct Scene    {
+   /// Indexes of meshes in the `MeshCtx` registry.
+   pub meshes: Vec<usize>
+}
+
+// === Registries ===
+pub struct GeometryCtx { pub data: Vec<Geometry> }
+pub struct MaterialCtx { pub data: Vec<Material> }
 pub struct MeshCtx     { pub data: Vec<Mesh> }
-pub struct Scene       { pub meshes: Vec<usize> }
 pub struct SceneCtx    { pub data: Vec<Scene> }
 
+// === Root Registry ===
 #[derive(PartialBorrow)]
 #[module(crate::data)] // Current module, see explanation below.
 pub struct Ctx {
-    pub geometry: GeometryCtx,
-    pub material: MaterialCtx,
-    pub mesh:     MeshCtx,
-    pub scene:    SceneCtx,
+   pub geometry: GeometryCtx,
+   pub material: MaterialCtx,
+   pub mesh:     MeshCtx,
+   pub scene:    SceneCtx,
+   // Possibly many more fields...
 }
 
 fn main() {
@@ -257,18 +392,21 @@ fn render_scene(
 }
 ```
 
-## 🛠 Batteries Included
+<br/>
+
+# 🔋 Batteries Included
 
 Consider the following struct to demonstrate the key tools provided by the macro:
 
 ```rust
-#[derive(Debug, Default, PartialBorrow)]
-#[module(crate::data)]
+#[derive(PartialBorrow)]
+#[module(crate::data)] // Current module, see explanation below.
 pub struct Ctx {
-    pub geometry: GeometryCtx,
-    pub material: MaterialCtx,
-    pub mesh:     MeshCtx,
-    pub scene:    SceneCtx,
+   pub geometry: GeometryCtx,
+   pub material: MaterialCtx,
+   pub mesh:     MeshCtx,
+   pub scene:    SceneCtx,
+   // Possibly many more fields...
 }
 ```
 
@@ -276,14 +414,13 @@ The `Ctx` struct is equipped with the following methods:
 
 ```rust
 impl Ctx {
-    /// Converts `Ctx` into `CtxRef` where each field can 
-    /// be either a mutable or immutable reference.
+    /// Borrows all fields. The target type needs to be known,
+    /// e.g., `ctx.as_refs::<p!(<*, mut mesh> Ctx)>()`.
     pub fn as_refs<Target>(&mut self) -> Target {
         // ...
     }
    
-    /// Converts `Ctx` into `CtxRef` where every field is 
-    /// a mutable reference.
+    /// Borrows all fields mutably.
     pub fn as_refs_mut(&mut self) -> p!(<mut *> Ctx) {
         // ...
     }
@@ -293,33 +430,49 @@ impl Ctx {
 The partially borrowed struct provides borrowing and splitting capabilities:
 
 ```rust
-impl CtxRef</* ... */> {
-    /// Re-borrows fields to match the target type. The
-    /// target type is a partial ref to the current 
-    /// struct, allowing for simple, explicit syntax:
-    /// `ctx.partial_borrow::<p!(<*, mut mesh> Ctx)>()`.
+impl p!(</* ... */>Ctx) {
+    /// Borrows required fields. The target type needs to be known,
+    /// e.g., `ctx.partial_borrow::<p!(<*, mut mesh> Ctx)>()`.
     fn partial_borrow<Target>(&mut self) -> &mut Target {
         // ...
     }
    
-    /// Re-borrows fields to match the target type and 
-    /// returns a struct of the remaining references.
-    fn partial_borrow_rest<Target>(&mut self) -> &mut Self::Rest {
+    /// Borrows fields required by `Target` and returns borrows of 
+    /// all remaining fields. Please note, that if `Target` requires
+    /// an immutable borrow of a field, the remaining fields will also 
+    /// include an immutable borrow of that field.
+    fn partial_borrow_rest<Target>(&mut self) -> 
+        &mut <Self as ParialBorrow<Target>>::Rest {
         // ...
     }
    
-    /// Splits the struct into two parts: one matching the 
-    /// target type and one containing the remaining references.
-    fn split<Target>(&mut self) -> (&mut Target, &mut Self::Rest) {
+    /// Borrows fields required by `Target` and returns borrows of 
+    /// all remaining fields. Please refer to the `partial_borrow` and
+    /// `partial_borrow_rest` methods for more details.
+    fn split<Target>(&mut self) -> (
+       &mut Target, 
+       &mut <Self as ParialBorrow<Target>>::Rest
+    ) {
         // ...
     }
+
+    // Extract the `geometry` field and return it along with the rest 
+    // of the borrowed fields.
+    pub fn extract_geometry(&mut self) -> (
+        &mut GeometryCtx,
+        &mut <Self as PartialBorrow<p!(<mut geometry> Ctx)>>::Rest
+    ) {
+        // ...
+    }
+
+    // Other `extract_$field` methods are generated similarly.
 }
 ```
 
 The partially borrowed struct also provides methods for concatenating partial borrows:
 
 ```rust
-impl CtxRef</* ... */> {
+impl p!(</* ... */>Ctx) {
     /// Concatenates the current partial borrow with 
     /// another one.
     fn union<Other>(&mut self, other: &mut Other) 
@@ -327,6 +480,8 @@ impl CtxRef</* ... */> {
         // ...
     }
 }
+
+
 
 /// The `Union` type is particularly useful when defining 
 /// type aliases.
@@ -367,7 +522,9 @@ fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
 }
 ```
 
-## 👓 `#[module(...)]` Attribute
+<br/>
+
+# 👓 `#[module(...)]` Attribute
 
 In the example above, we used the `#[module(...)]` attribute, which specifies the path to the module where the macro is invoked. This attribute is necessary because, currently, Rust does not allow procedural macros to automatically detect the path of the module they are used in. This limitation applies to both stable and unstable Rust versions.
 
@@ -377,7 +534,9 @@ If you intend to use the generated macro from another crate, avoid using the `cr
 extern crate self as my_crate;
 ```
 
-## 🛠 How It Works Under the Hood
+<br/>
+
+# 🛠 How It Works Under the Hood
 
 This macro performs straightforward transformations. Consider the `Ctx` struct from the example above:
 
@@ -475,6 +634,8 @@ impl CtxRef</* ... */> {
 
 Finally, a helper macro with the same name as the struct is generated and is used by the `partial_borrow` macro.
 
-## ⚠️ Limitations
+<br/>
+
+# ⚠️ Limitations
 
 Currently, the macro works only with non-parametrized structures. For parametrized structures, please create an issue or submit a pull request.
