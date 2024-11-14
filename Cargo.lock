@@ -4,14 +4,14 @@ version = 3
 
 [[package]]
 name = "borrow"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "borrow-macro",
 ]
 
 [[package]]
 name = "borrow-macro"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "itertools",
  "proc-macro2",
