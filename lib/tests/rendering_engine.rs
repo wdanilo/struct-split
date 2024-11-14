@@ -20,7 +20,7 @@ fn test_types() {
     render_pass1_explicit(ctx.as_refs_mut().partial_borrow());
 }
 
-fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
+fn render_pass1(ctx: p!(&<mut *> Ctx)) {
     let (scene, ctx2) = ctx.extract_scene();
     for scene in &scene.data {
         for mesh in &scene.meshes {
@@ -31,7 +31,7 @@ fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
     render_pass3(ctx.partial_borrow());
 }
 
-fn render_pass1_explicit(ctx: &mut p!(<mut *> Ctx)) {
+fn render_pass1_explicit(ctx: p!(&<mut *> Ctx)) {
     let (scene_ctx, ctx2) = ctx.split::<p!(<mut scene> Ctx)>();
     for scene in &scene_ctx.scene.data {
         for mesh in &scene.meshes {
@@ -42,9 +42,9 @@ fn render_pass1_explicit(ctx: &mut p!(<mut *> Ctx)) {
     render_pass2(&mut merged_ctx);
 }
 
-fn render_pass2(_ctx: &mut p!(<mut *> Ctx)) {}
+fn render_pass2(_ctx: p!(&<mut *> Ctx)) {}
 fn render_pass3(_ctx: &mut GlyphRenderCtx) {}
-fn render_scene(_ctx: &mut p!(<mesh, mut geometry, mut material> Ctx), _mesh: usize) {
+fn render_scene(_ctx: p!(&<mesh, mut geometry, mut material> Ctx), _mesh: usize) {
     // ...
 }
 
