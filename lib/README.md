@@ -255,9 +255,9 @@ This crate provides the `partial_borrow` macro, which we recommend importing und
 ```rust
 // CURRENT FILE: src/data.rs
 
-use struct_split::PartialBorrow;
-use struct_split::partial_borrow as p;
-use struct_split::traits::*;
+use borrow::PartialBorrow;
+use borrow::partial_borrow as p;
+use borrow::traits::*;
 
 #[derive(PartialBorrow)]
 #[module(crate::data)] // Current module, see explanation below.
@@ -337,9 +337,9 @@ Let's apply these concepts to our rendering engine example:
 ```rust
 // CURRENT FILE: src/data.rs
 
-use struct_split::PartialBorrow;
-use struct_split::partial_borrow as p;
-use struct_split::traits::*;
+use borrow::PartialBorrow;
+use borrow::partial_borrow as p;
+use borrow::traits::*;
 
 // === Data ===
 pub struct Geometry { /* ... */ }
