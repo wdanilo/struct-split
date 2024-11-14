@@ -2,9 +2,9 @@
 
 <br/>
 
-# 🧩 Partial Borrows
+# 🔪 Partial Borrows
 
-Zero-overhead ["partial borrows"](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020), borrows of selected fields only, like `&<mut field1, mut field2>MyStruct`. It lets you split structs into non-overlapping sets of mutably borrowed fields. It's akin to [slice::split_at_mut](https://doc.rust-lang.org/std/primitive.slice.html#method.split_at_mut), but more flexible and tailored for structs.
+Zero-overhead ["partial borrows"](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020), borrows of selected fields only, like `&<mut field1, mut field2>MyStruct`. It lets you split structs into non-overlapping sets of mutably borrowed fields, similar to [slice::split_at_mut](https://doc.rust-lang.org/std/primitive.slice.html#method.split_at_mut), but more flexible and tailored for structs.
 
 <br/>
 
@@ -53,7 +53,7 @@ struct Graph {
 
 // Requires mutable access to the `graph.edges` field.
 fn detach_node(
-   graph: &mut p!(<mut edges> Graph), // ⚠️
+   graph: p!(&<mut edges> Graph), // ⚠️
    node: &mut Node
 ) {
    for edge_id in std::mem::take(&mut node.outputs) {
@@ -65,9 +65,9 @@ fn detach_node(
 }
 
 // Requires mutable access to all `graph` fields.
-fn detach_all_nodes(graph: &mut p!(<mut *> Graph)) { // ⚠️
+fn detach_all_nodes(graph: p!(&<mut *> Graph)) { // ⚠️
    // Extract the `nodes` field. The `graph2` variable has a type
-   // of `&mut p!(<mut *, !nodes> Graph)`.
+   // of `p!(&<mut *, !nodes> Graph)`.
    let (nodes, graph2) = graph.extract_nodes(); // ⚠️
    for node in nodes {
       detach_node(graph2.partial_borrow(), node); // ⚠️
@@ -276,7 +276,7 @@ The macro allows you to parameterize borrows similarly to how you parameterize t
    ```rust
    // Immutable reference to `geometry` and mutable reference 
    // to `material`.
-   fn test(ctx: &mut p!(<geometry, mut material> Ctx)) {
+   fn test(ctx: p!(&<geometry, mut material> Ctx)) {
        // ...
    }
    ```
@@ -285,18 +285,18 @@ The macro allows you to parameterize borrows similarly to how you parameterize t
 
    ```rust
    // Immutable reference to all fields except `geometry`.
-   fn test1(ctx: &mut p!(<*, !geometry> Ctx)) {
+   fn test1(ctx: p!(&<*, !geometry> Ctx)) {
        // ...
    }
 
    // Immutable reference to `material` and mutable reference 
    // to all other fields.
-   fn test2(ctx: &mut p!(<mut *, material> Ctx)) {
+   fn test2(ctx: p!(&<mut *, material> Ctx)) {
        // ...
    }
 
    // Mutable reference to all fields.
-   fn test3(ctx: &mut p!(<mut *> Ctx)) {
+   fn test3(ctx: p!(&<mut *> Ctx)) {
        // ...
    }
    ```
@@ -307,7 +307,7 @@ The macro allows you to parameterize borrows similarly to how you parameterize t
    // Reference to `mesh` with lifetime `'c` and references to 
    // other fields with lifetime `'b`. The inferred lifetime 
    // dependencies are `'a: 'b` and `'a: 'c`.
-   fn test<'a, 'b, 'c>(ctx: &'a mut p!(<'b *, 'c mesh> Ctx)) {
+   fn test<'a, 'b, 'c>(ctx: p!(&'a <'b *, 'c mesh> Ctx)) {
        // ...
    }
    ```
@@ -318,6 +318,18 @@ The macro allows you to parameterize borrows similarly to how you parameterize t
    // Alias for immutable references to `geometry` and `material` 
    // with lifetime `'t`, and to `mesh` with lifetime `'m`.
    type GlyphCtx<'t, 'm> = p!(<'t, geometry, material, 'm mesh> Ctx);
+   ```
+
+5. **Flexible Macro Expansion**: Please note that `p!(&<...>MyStruct)` always expands to `&mut p!(<...>MyStruct)`, which expands to `&mut MyStructRef<...>`, a generated struct containing references to fields. This allows for concise type alias syntax.
+
+   ```rust
+   type RenderCtx<'t> = p!(<'t, scene> Ctx);
+   type GlyphCtx<'t> = p!(<'t, geometry, material, mesh> Ctx);
+   type GlyphRenderCtx<'t> = Union<RenderCtx<'t>, GlyphCtx<'t>>;
+   
+   fn test(ctx: &mut GlyphRenderCtx) {
+       // ...
+   }
    ```
 
 Let's apply these concepts to our rendering engine example:
@@ -366,7 +378,7 @@ fn main() {
     render(ctx.as_refs_mut().partial_borrow());
 }
 
-fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
+fn render_pass1(ctx: p!(&<mut *> Ctx)) {
     // Extract a mut ref to `scene`, excluding it from `ctx`.
     let (scene, ctx2) = ctx.extract_scene();
     for scene in &scene.data {
@@ -379,13 +391,13 @@ fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
     render_pass2(ctx);
 }
 
-fn render_pass2(ctx: &mut p!(<mut *> Ctx)) {
+fn render_pass2(ctx: p!(&<mut *> Ctx)) {
     // ...
 }
 
-// Take a ref to `mesh` and mut ref to `geometry` and `material`.
+// Take a ref to `mesh` and mut refs to `geometry` and `material`.
 fn render_scene(
-    ctx: &mut p!(<mesh, mut geometry, mut material> Ctx), 
+    ctx: p!(&<mesh, mut geometry, mut material> Ctx), 
     mesh: usize
 ) {
     // ...
@@ -493,7 +505,7 @@ type GlyphRenderCtx<'t> = Union<RenderCtx<'t>, GlyphCtx<'t>>;
 Please note, that while the `union` operation might seem useful, in most cases it is better to re-structure your code to avoid it. For example, let's consider the previous implementation of `render_pass1`: 
 
 ```rust
-fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
+fn render_pass1(ctx: p!(&<mut *> Ctx)) {
     let (scene, ctx2) = ctx.extract_scene();
     for scene in &scene.data {
         for mesh in &scene.meshes {
@@ -507,7 +519,7 @@ fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
 It could also be implemented using explicit split and union, but it would make the code less readable:
 
 ```rust
-fn render_pass1(ctx: &mut p!(<mut *> Ctx)) {
+fn render_pass1(ctx: p!(&<mut *> Ctx)) {
     // The `ctx` var shadows the original one here.
     let (scene_ctx, ctx) = ctx.split::<p!(<mut scene> Ctx)>();
     for scene in &scene_ctx.scene.data {
@@ -563,35 +575,12 @@ pub struct CtxRef<Geometry, Material, Mesh, Scene> {
 }
 ```
 
-Each type parameter is instantiated with one of `&`, `&mut`, or `Hidden<T>`:
+Each type parameter is instantiated with one of `&`, `&mut`, or `Hidden<T>`, a type used to safely hide fields that are not part of the current borrow:
 
 ```rust
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct Hidden<T>(*mut T);
-```
-
-The `Hidden<T>` type is used to safely hide fields that are not part of the current borrow.
-
-The macro generates `as_refs_mut` and `as_refs` methods for flexible reference creation:
-
-```rust
-impl Ctx {
-    pub fn as_refs_mut(&mut self) -> CtxRef<
-        &mut GeometryCtx, 
-        &mut MaterialCtx,
-        &mut MeshCtx,
-        &mut SceneCtx
-    > {
-        // ...
-    }
-    
-    // `T` is a parametrized `CtxRef` struct. Bounds are 
-    // skipped for brevity.
-    pub fn as_refs<T>(&self) -> T where /* ... */ {
-        // ...
-    }
-}
 ```
 
 The `partial_borrow`, `partial_borrow_rest`, and `split` methods are implemented using inlined pointer casts, with safety guarantees enforced by the type system:
@@ -615,19 +604,6 @@ pub trait PartialBorrow<Target> {
         let a = unsafe { &mut *(self as *mut _ as *mut _) };
         let b = unsafe { &mut *(self as *mut _ as *mut _) };
         (a, b)
-    }
-}
-```
-
-An `extract_$field` method is generated for each field:
-
-```rust
-impl CtxRef</* ... */> {
-    pub fn extract_geometry(&mut self) -> (
-        &mut GeometryCtx,
-        &mut <Self as Split</* ... */>>::Rest
-    ) {
-        // ...
     }
 }
 ```
