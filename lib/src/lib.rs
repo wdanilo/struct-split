@@ -309,7 +309,9 @@ macro_rules! lifetime_chooser {
 
 #[macro_export]
 macro_rules! partial_borrow {
-    (< $($ts:tt)*)                    => { $crate::partial_borrow! { @ [] $($ts)* } };
+    (& $lt:lifetime $($ts:tt)*)       => { & $lt mut $crate::partial_borrow! { $($ts)* } };
+    (& $($ts:tt)*)                    => { &     mut $crate::partial_borrow! { $($ts)* } };
+    (< $($ts:tt)*)                    => {           $crate::partial_borrow! { @ [] $($ts)* } };
     (@ [$($xs:tt)*] > $t:ident)       => { $t! { $($xs)* } };
     (@ [$($xs:tt)*] $t:tt $($ts:tt)*) => { $crate::partial_borrow! { @ [$($xs)* $t] $($ts)* } };
 }
