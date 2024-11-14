@@ -1,6 +1,6 @@
-<p align="center">
-  <img width="460" src="https://github.com/user-attachments/assets/71b1ecae-7f39-4bb2-9a8e-6e9a7b9f06f5">
-</p>
+<img width="735" alt="partial2" src="https://github.com/user-attachments/assets/b573018c-ab95-4b4d-9b60-1229d97ae707">
+
+<br/>
 
 # 🧩 Partial Borrows
 
