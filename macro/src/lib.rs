@@ -88,8 +88,24 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
     };
 
     // Generates:
+    // impl<geometry_target, material_target, mesh_target, scene_target,
+    //      geometry,        material,        mesh,        scene>
+    // PartialBorrowInferenceGuide<
+    //       CtxRef<geometry_target, material_target, mesh_target, scene_target>
+    // > for CtxRef<geometry,        material,        mesh,        scene> {}
+    let impl_inference_guide = {
+        let target_params = params.iter().map(|i| Ident::new(&format!("{i}_target"), i.span())).collect_vec();
+        quote! {
+            #[allow(non_camel_case_types)]
+            impl<#(#params,)* #(#target_params,)*>
+            #lib::PartialBorrowInferenceGuide<#ref_struct_ident<#(#target_params,)*>>
+            for #ref_struct_ident<#(#params,)*> {}
+        }
+    };
+
+    // Generates:
     // impl<'t, geometry, material, mesh, scene>
-    //     AsRefs<'t, CtxRef<geometry, material, mesh, scene>> for Ctx
+    // AsRefs<'t, CtxRef<geometry, material, mesh, scene>> for Ctx
     // where
     //     GeometryCtx: RefCast<'t, geometry>,
     //     MaterialCtx: RefCast<'t, material>,
@@ -350,6 +366,7 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
 
     let out = quote! {
         #ref_struct
+        #impl_inference_guide
         #impl_as_refs
         #impl_as_refs_mut
         #ref_macro

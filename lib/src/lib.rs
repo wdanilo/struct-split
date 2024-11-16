@@ -125,11 +125,36 @@ type SplitFieldsRest<T, Target> = <T as SplitFields<Target>>::Rest;
 // === PartialBorrow ===
 // =====================
 
+/// Helper trait for [`PartialBorrow`]. This trait is automatically implemented by the [`partial_borrow!`]
+/// macro. It is used to provide Rust type inferencer with additional type information. In particular, it
+/// is used to tell that any partial borrow of a struct results in the same struct type, but parametrized
+/// differently. It is needed for Rust to correctly infer target types for associated methods, like:
+///
+/// ```ignore
+/// #[derive(PartialBorrow)]
+/// #[module(crate)]
+/// pub struct Ctx {
+///     pub geometry: GeometryCtx,
+///     pub material: MaterialCtx,
+///     pub mesh: MeshCtx,
+///     pub scene: SceneCtx,
+/// }
+///
+/// impl p!(<mut geometry, mut material>Ctx) {
+///     fn my_method(&mut self){}
+/// }
+///
+/// fn test(ctx: p!(&<mut *> Ctx)) {
+///     ctx.partial_borrow().my_method();
+/// }
+/// ```
+pub trait PartialBorrowInferenceGuide<Target> {}
+
 /// Implementation of partial field borrowing. The `Target` type parameter specifies the required
 /// partial borrow representation, such as `p!(<mut field1, field2>MyStruct)`.
 ///
 /// This trait is automatically implemented for all partial borrow representations.
-pub trait PartialBorrow<Target> {
+pub trait PartialBorrow<Target> : PartialBorrowInferenceGuide<Target> {
     type Rest;
 
     /// See the documentation of [`PartialBorrowHelper::partial_borrow`].
@@ -148,6 +173,7 @@ pub trait PartialBorrow<Target> {
 }
 
 impl<Source, Target> PartialBorrow<Target> for Source where
+Source: PartialBorrowInferenceGuide<Target>,
 Source: HasFields,
 Target: HasFields,
 Fields<Source>: SplitFields<Fields<Target>>,
@@ -156,12 +182,18 @@ Target: ReplaceFields<SplitFieldsRest<Fields<Source>, Fields<Target>>> {
 }
 
 /// Helper for [`PartialBorrow`]. This trait is automatically implemented for all types.
-impl<T> PartialBorrowHelper for T {}
+impl<Target> PartialBorrowHelper for Target {}
 pub trait PartialBorrowHelper {
     /// Borrow fields from this partial borrow for the `Target` partial borrow, like
     /// `ctx.partial_borrow::<p!(<mut scene>Ctx)>()`.
     #[inline(always)]
     fn partial_borrow<Target>(&mut self) -> &mut Target
+    where Self: PartialBorrowNotEq<Target> { self.partial_borrow_impl() }
+
+    /// Borrow fields from this partial borrow for the `Target` partial borrow, like
+    /// `ctx.partial_borrow::<p!(<mut scene>Ctx)>()`.
+    #[inline(always)]
+    fn partial_borrow_or_eq<Target>(&mut self) -> &mut Target
     where Self: PartialBorrow<Target> { self.partial_borrow_impl() }
 
     /// Split this partial borrow into the `Target` partial borrow and the remaining fields, like
@@ -170,6 +202,39 @@ pub trait PartialBorrowHelper {
     fn split<Target>(&mut self) -> (&mut Target, &mut Self::Rest)
     where Self: PartialBorrow<Target> { self.split_impl() }
 }
+
+
+// ==========================
+// === PartialBorrowNotEq ===
+// ==========================
+
+pub trait PartialBorrowNotEq<Target> : PartialBorrow<Target> + NotEq<Target> {}
+impl<Target, T> PartialBorrowNotEq<Target> for T where T: PartialBorrow<Target> + NotEq<Target> {}
+
+
+// =============
+// === NotEq ===
+// =============
+
+pub trait NotEq<Target> {}
+impl<Source, Target> NotEq<Target> for Source where
+    Source: HasFields,
+    Target: HasFields,
+    Fields<Source>: NotEqFields<Fields<Target>> {
+}
+
+pub trait NotEqFields<Target> {}
+impl<    't, H, T, T2> NotEqFields<Cons<&'t mut H, T>> for Cons<Hidden<H>, T2> {}
+impl<    't, H, T, T2> NotEqFields<Cons<&'t     H, T>> for Cons<Hidden<H>, T2> {}
+impl<        H, T, T2> NotEqFields<Cons<Hidden<H>, T>> for Cons<Hidden<H>, T2> where T: NotEqFields<T2> {}
+
+impl<    't, H, T, T2> NotEqFields<Cons<Hidden<H>, T>> for Cons<&'t mut H, T2> {}
+impl<'s, 't, H, T, T2> NotEqFields<Cons<&'s     H, T>> for Cons<&'t mut H, T2> {}
+impl<'s, 't, H, T, T2> NotEqFields<Cons<&'s mut H, T>> for Cons<&'t mut H, T2> where T: NotEqFields<T2> {}
+
+impl<    't, H, T, T2> NotEqFields<Cons<Hidden<H>, T>> for Cons<&'t H, T2> {}
+impl<'s, 't, H, T, T2> NotEqFields<Cons<&'s mut H, T>> for Cons<&'t H, T2> {}
+impl<'s, 't, H, T, T2> NotEqFields<Cons<&'s     H, T>> for Cons<&'t H, T2> where T: NotEqFields<T2> {}
 
 
 // ==================

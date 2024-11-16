@@ -3,10 +3,13 @@
 mod data;
 
 use data::Ctx;
-use borrow::partial_borrow as p;
+use data::CtxRef;
+use borrow::{partial_borrow as p, PartialBorrowInferenceGuide};
 
 use borrow::traits::*;
 use borrow::Union;
+use borrow::Hidden;
+use crate::data::{GeometryCtx, MaterialCtx, MeshCtx, SceneCtx};
 
 // =============
 // === Tests ===
@@ -15,7 +18,7 @@ use borrow::Union;
 #[test]
 fn test_types() {
     let mut ctx = Ctx::mock();
-    render_pass1(ctx.as_refs_mut().partial_borrow());
+    render_pass1(&mut ctx.as_refs_mut());
 }
 
 fn render_pass1(ctx: p!(&<mut *> Ctx)) {
@@ -25,7 +28,7 @@ fn render_pass1(ctx: p!(&<mut *> Ctx)) {
             render_scene(ctx2.partial_borrow(), *mesh)
         }
     }
-    render_pass2(ctx.partial_borrow());
+    render_pass2(ctx);
     render_pass3(ctx.partial_borrow());
 }
 
@@ -40,3 +43,18 @@ fn render_scene(_ctx: p!(&<mesh, mut geometry, mut material> Ctx), _mesh: usize)
 type RenderCtx<'t> = p!(<'t, scene> Ctx);
 type GlyphCtx<'t> = p!(<'t, geometry, material, mesh> Ctx);
 type GlyphRenderCtx<'t> = Union<RenderCtx<'t>, GlyphCtx<'t>>;
+
+// pub struct Ctx {
+//     pub geometry: GeometryCtx,
+//     pub material: MaterialCtx,
+//     pub mesh: MeshCtx,
+//     pub scene: SceneCtx,
+// }
+
+impl p!(<mut geometry, mut material>Ctx) {
+    fn foo(&mut self){}
+}
+
+fn test(ctx: p!(&<mut *> Ctx)) {
+    ctx.partial_borrow().foo();
+}
