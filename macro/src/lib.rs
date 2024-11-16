@@ -162,7 +162,7 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
     // Generates:
     // impl<geometry_target, material_target, mesh_target, scene_target,
     //      geometry,        material,        mesh,        scene>
-    // FromFields<HList![geometry_target, material_target, mesh_target, scene_target]>
+    // ReplaceFields<HList![geometry_target, material_target, mesh_target, scene_target]>
     // for CtxRef<geometry, material, mesh, scene> {
     //     type Result = CtxRef<geometry_target, material_target, mesh_target, scene_target>;
     // }
@@ -171,51 +171,8 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
         quote! {
             #[allow(non_camel_case_types)]
             impl<#(#params,)* #(#target_params,)*>
-            #lib::FromFields<#lib::HList!{#(#target_params,)*}> for #ref_struct_ident<#(#params,)*> {
+            #lib::ReplaceFields<#lib::HList!{#(#target_params,)*}> for #ref_struct_ident<#(#params,)*> {
                 type Result = #ref_struct_ident<#(#target_params,)*>;
-            }
-        }
-    };
-
-    // Generates:
-    // impl<'t, geometry, material, mesh, scene, geometry_other, material_other, mesh_other, scene_other>
-    // Join<&'t mut CtxRef<geometry_other, material_other, mesh_other, scene_other>>
-    // for &'t mut CtxRef<geometry, material, mesh, scene> where
-    //     geometry: UnifyFieldImpl<'t, geometry2>,
-    //     material: UnifyFieldImpl<'t, material2>,
-    //     mesh: UnifyFieldImpl<'t, mesh2>,
-    //     scene: UnifyFieldImpl<'t, scene2>,
-    // {
-    //     type Result = CtxRef<
-    //         <geometry as UnifyFieldImpl<'t, geometry_other>>::Result,
-    //         <material as UnifyFieldImpl<'t, material_other>>::Result,
-    //         <mesh as UnifyFieldImpl<'t, mesh_other>>::Result,
-    //         <scene as UnifyFieldImpl<'t, scene_other>>::Result,
-    //     >;
-    //     fn join(self, other: &'t mut CtxRef<geometry_other, material_other, mesh_other, scene_other>) -> Self::Result {
-    //         let geometry = self.geometry.join_field(&mut other.geometry);
-    //         let material = self.material.join_field(&mut other.material);
-    //         let mesh = self.mesh.join_field(&mut other.mesh);
-    //         let scene = self.scene.join_field(&mut other.scene);
-    //         CtxRef { geometry, material, mesh, scene }
-    //     }
-    // }
-    let impl_join = {
-        let other_params = params.iter().map(|i| Ident::new(&format!("{i}_other"), i.span())).collect_vec();
-        quote! {
-            #[allow(non_camel_case_types)]
-            impl<'_t, #(#params,)* #(#other_params,)*>
-            #lib::UnifyImpl<&'_t mut #ref_struct_ident<#(#other_params,)*>> for &'_t mut #ref_struct_ident<#(#params,)*>
-            where
-                #(#params: #lib::UnifyFieldImpl<'_t, #other_params>,)*
-            {
-                type Result = #ref_struct_ident<#(<#params as #lib::UnifyFieldImpl<'_t, #other_params>>::Result,)*>;
-                #[inline(always)]
-                fn union(self, other: &'_t mut #ref_struct_ident<#(#other_params,)*>) -> Self::Result {
-                    #ref_struct_ident {
-                        #(#field_idents: #lib::UnifyFieldImpl::unify_field(&mut self.#field_idents, &mut other.#field_idents),)*
-                    }
-                }
             }
         }
     };
@@ -399,7 +356,6 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
         #impl_extract_fields
         #impl_into_fields
         #impl_from_fields
-        #impl_join
     };
 
     // println!(">>> {}", out);

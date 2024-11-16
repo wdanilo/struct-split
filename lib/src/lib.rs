@@ -1,9 +1,13 @@
+// #![doc = include_str!("../README.md")]
+
 pub mod hlist;
+pub mod reflect;
 
 use hlist::Cons;
 use hlist::Nil;
-
 use std::fmt::Debug;
+
+pub use reflect::*;
 pub use borrow_macro::*;
 
 
@@ -25,33 +29,27 @@ pub mod traits {
 // === AsRefs ===
 // ==============
 
+/// Borrow all fields of a struct and output a partially borrowed struct,
+/// like `p!(<mut field1, field2>MyStruct)`.
 pub trait AsRefs<'t, T> {
     fn as_refs_impl(&'t mut self) -> T;
 }
 
 impl<'t, T> AsRefsHelper<'t> for T {}
 pub trait AsRefsHelper<'t> {
+    /// Borrow all fields of a struct and output a partially borrowed struct,
+    /// like `p!(<mut field1, field2>MyStruct)`.
     #[inline(always)]
     fn as_refs<T>(&'t mut self) -> T
     where Self: AsRefs<'t, T> { self.as_refs_impl() }
 }
 
 
-// =======================
-// === Struct Generics ===
-// =======================
-
-pub trait HasFields { type Fields; }
-type Fields<T> = <T as HasFields>::Fields;
-
-pub trait FromFields<Fields> { type Result; }
-type WithFields<T, Fields> = <T as FromFields<Fields>>::Result;
-
-
 // =========================
 // === No Access Wrapper ===
 // =========================
 
+/// A phantom type used to mark fields as hidden in the partially borrowed structs.
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct Hidden<T>(*mut T);
@@ -67,6 +65,7 @@ impl<T> Clone for Hidden<T> {
 // ===============
 
 pub trait RefCast<'t, T> {
+    /// All possible casts of a mutable reference: `&mut T` (identity), `&T`, and `Hidden<T>`.
     fn ref_cast(&'t mut self) -> T;
 }
 
@@ -90,12 +89,17 @@ impl<'t, T> RefCast<'t, Hidden<T>> for T {
 // === Acquire ===
 // ===============
 
+
+/// This is a documentation for type-level field borrowing transformation. It involves checking if a
+/// field of a partially borrowed struct can be borrowed in a specific form and provides the remaining
+/// fields post-borrow.
 pub trait           Acquire<Target>                  { type Rest; }
 impl<'t, T, S>      Acquire<Hidden<T>> for S         { type Rest = S; }
 impl<'t: 's, 's, T> Acquire<&'s mut T> for &'t mut T { type Rest = Hidden<T>; }
 impl<'t: 's, 's, T> Acquire<&'s     T> for &'t mut T { type Rest = &'t T; }
 impl<'t: 's, 's, T> Acquire<&'s     T> for &'t     T { type Rest = &'t T; }
 
+/// Remaining fields after borrowing a specific field. See the documentation of [`Acquire`] to learn more.
 pub type Acquired<This, Target> = <This as Acquire<Target>>::Rest;
 
 
@@ -103,37 +107,38 @@ pub type Acquired<This, Target> = <This as Acquire<Target>>::Rest;
 // === SplitFields ===
 // ===================
 
-pub trait SplitFields<Target> { type Rest; }
-type SplitFieldsRest<T, Target> = <T as SplitFields<Target>>::Rest;
-
-impl SplitFields<Nil> for Nil {
-    type Rest = Nil;
-}
-
+/// Split HList of borrows into target HList of borrows and a HList of remaining borrows after
+/// acquiring the target. See the documentation of [`Acquire`] for more information.
+///
+/// This trait is automatically implemented for all types.
+pub trait          SplitFields<Target>               { type Rest; }
+impl               SplitFields<Nil>          for Nil { type Rest = Nil; }
 impl<H, H2, T, T2> SplitFields<Cons<H2, T2>> for Cons<H, T> where
-H: Acquire<H2>,
-T: SplitFields<T2> {
+T: SplitFields<T2>, H: Acquire<H2> {
     type Rest = Cons<Acquired<H, H2>, <T as SplitFields<T2>>::Rest>;
 }
+
+type SplitFieldsRest<T, Target> = <T as SplitFields<Target>>::Rest;
 
 
 // =====================
 // === PartialBorrow ===
 // =====================
 
+/// Implementation of partial field borrowing. The `Target` type parameter specifies the required
+/// partial borrow representation, such as `p!(<mut field1, field2>MyStruct)`.
+///
+/// This trait is automatically implemented for all partial borrow representations.
 pub trait PartialBorrow<Target> {
     type Rest;
 
+    /// See the documentation of [`PartialBorrowHelper::partial_borrow`].
     #[inline(always)]
     fn partial_borrow_impl(&mut self) -> &mut Target {
         unsafe { &mut *(self as *mut _ as *mut _) }
     }
 
-    #[inline(always)]
-    fn partial_borrow_rest_impl(&mut self) -> &mut Self::Rest {
-        unsafe { &mut *(self as *mut _ as *mut _) }
-    }
-
+    /// See the documentation of [`PartialBorrowHelper::split`].
     #[inline(always)]
     fn split_impl(&mut self) -> (&mut Target, &mut Self::Rest) {
         let a = unsafe { &mut *(self as *mut _ as *mut _) };
@@ -146,20 +151,21 @@ impl<Source, Target> PartialBorrow<Target> for Source where
 Source: HasFields,
 Target: HasFields,
 Fields<Source>: SplitFields<Fields<Target>>,
-Target: FromFields<SplitFieldsRest<Fields<Source>, Fields<Target>>> {
-    type Rest = WithFields<Target, SplitFieldsRest<Fields<Source>, Fields<Target>>>;
+Target: ReplaceFields<SplitFieldsRest<Fields<Source>, Fields<Target>>> {
+    type Rest = ReplacedFields<Target, SplitFieldsRest<Fields<Source>, Fields<Target>>>;
 }
 
+/// Helper for [`PartialBorrow`]. This trait is automatically implemented for all types.
 impl<T> PartialBorrowHelper for T {}
 pub trait PartialBorrowHelper {
+    /// Borrow fields from this partial borrow for the `Target` partial borrow, like
+    /// `ctx.partial_borrow::<p!(<mut scene>Ctx)>()`.
     #[inline(always)]
     fn partial_borrow<Target>(&mut self) -> &mut Target
     where Self: PartialBorrow<Target> { self.partial_borrow_impl() }
 
-    #[inline(always)]
-    fn partial_borrow_rest<Target>(&mut self) -> &mut Self::Rest
-    where Self: PartialBorrow<Target> { self.partial_borrow_rest_impl() }
-
+    /// Split this partial borrow into the `Target` partial borrow and the remaining fields, like
+    /// `let (scene, ctx2) = ctx.split::<p!(<mut scene>Ctx)>()`.
     #[inline(always)]
     fn split<Target>(&mut self) -> (&mut Target, &mut Self::Rest)
     where Self: PartialBorrow<Target> { self.split_impl() }
@@ -212,89 +218,11 @@ impl<Source, Other> Unify<Other> for Source where
     Source: HasFields,
     Other: HasFields,
     Fields<Source>: UnifyFields<Fields<Other>>,
-    Other: FromFields<ConcatFieldsResult<Fields<Source>, Fields<Other>>> {
-    type Result = WithFields<Other, ConcatFieldsResult<Fields<Source>, Fields<Other>>>;
+    Other: ReplaceFields<ConcatFieldsResult<Fields<Source>, Fields<Other>>> {
+    type Result = ReplacedFields<Other, ConcatFieldsResult<Fields<Source>, Fields<Other>>>;
 }
 
 pub type Union<T, Other> = <T as Unify<Other>>::Result;
-
-
-// ======================
-// === UnifyFieldImpl ===
-// ======================
-
-// NOTE:
-// This impl is pretty complex. Maybe it is possible to parametrize everything differently
-// to make it nicer.
-pub trait UnifyFieldImpl<'t, Other> {
-    type Result;
-    fn unify_field(&'t mut self, other: &'t mut Other) -> Self::Result;
-}
-
-// === for Hidden<T> ===
-
-impl<'t, T> UnifyFieldImpl<'t, Hidden<T>> for Hidden<T> {
-    type Result = Hidden<T>;
-    fn unify_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { *self }
-}
-
-impl<'t, 's, T> UnifyFieldImpl<'t, &'s T> for Hidden<T> {
-    type Result = &'s T;
-    fn unify_field(&'t mut self, other: &'t mut &'s T) -> Self::Result { other }
-}
-
-impl<'t, 's, T: 't> UnifyFieldImpl<'t, &'s mut T> for Hidden<T> {
-    type Result = &'t mut T;
-    fn unify_field(&'t mut self, other: &'t mut &'s mut T) -> Self::Result { other }
-}
-
-// === for &'s T ===
-
-impl<'t, 's, T> UnifyFieldImpl<'t, Hidden<T>> for &'s T {
-    type Result = &'s T;
-    fn unify_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { self }
-}
-
-impl<'t, 's, T> UnifyFieldImpl<'t, &'s T> for &'s T {
-    type Result = &'s T;
-    fn unify_field(&'t mut self, _: &'t mut &'s T) -> Self::Result { self }
-}
-
-impl<'t, 's, T: 't> UnifyFieldImpl<'t, &'s mut T> for &'s T {
-    type Result = &'t mut T;
-    fn unify_field(&'t mut self, other: &'t mut &'s mut T) -> Self::Result { other }
-}
-
-// === for &'s mut T ===
-
-impl<'t, 's, T: 't> UnifyFieldImpl<'t, Hidden<T>> for &'s mut T {
-    type Result = &'t mut T;
-    fn unify_field(&'t mut self, _: &'t mut Hidden<T>) -> Self::Result { self }
-}
-
-impl<'t, 's, T: 't> UnifyFieldImpl<'t, &'s T> for &'s mut T {
-    type Result = &'t mut T;
-    fn unify_field(&'t mut self, _: &'t mut &'s T) -> Self::Result { self }
-}
-
-impl<'t, 's, T: 't> UnifyFieldImpl<'t, &'s mut T> for &'s mut T {
-    type Result = &'t mut T;
-    fn unify_field(&'t mut self, _: &'t mut &'s mut T) -> Self::Result { self }
-}
-
-
-// =================
-// === UnifyImpl ===
-// =================
-
-pub trait UnifyImpl<Other> {
-    type Result;
-    fn union(self, other: Other) -> Self::Result;
-}
-
-// This should be the same as `Union`, but the implementation of `unify` requires
-// complex bounds, so `Union` uses simpler logic.
-pub type UnionImpl<T, Other> = <T as UnifyImpl<Other>>::Result;
 
 
 // ==============
