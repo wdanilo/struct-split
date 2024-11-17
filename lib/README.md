@@ -4,7 +4,178 @@
 
 # 🔪 Partial Borrows
 
-Zero-overhead ["partial borrows"](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020), borrows of selected fields only, like `&<mut field1, mut field2>MyStruct`. It lets you split structs into non-overlapping sets of mutably borrowed fields, similar to [slice::split_at_mut](https://doc.rust-lang.org/std/primitive.slice.html#method.split_at_mut), but more flexible and tailored for structs.
+Zero-overhead ["partial borrows"](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020), borrows of selected fields only, **including partial self-borrows**. It lets you split structs into non-overlapping sets of mutably borrowed fields, like `&<mut field1, field2>MyStruct` and `&<field2, mut field3>MyStruct`. It is similar to [slice::split_at_mut](https://doc.rust-lang.org/std/primitive.slice.html#method.split_at_mut), but more flexible and tailored for structs.
+
+<br/>
+
+# 🤩 Why partial borrows? Examples included!
+
+Partial borrows has variety of advantages. Each of the following points has a short in-line explanation with a link to an example code with detailed explanation:
+
+### [🪢 You can partially borrow self in methods (click to see example)](...)
+You can call a function that takes partially borrowed fields from `&mut self` while holding references to other parts of `Self`, even if it contains private fields.
+
+### [👓 Partial borrows make your code more readable and less error-prone (click to see example).](...)
+They allow you to drastically shorten function signatures and their usage places. They also allow you to keep the code unchanged, e.g. after adding a new field to a struct, instead of manual refactoring in potentially many places.
+
+### [🚀 Partial borrows make your code faster (click to see example).](...) 
+because passing a single partial reference produces more optimized code than passing many references in separate arguments.
+
+<br/>
+
+# 📖 Other literature
+
+In real-world applications, lack of partial borrows often affects API design, making code hard to maintain and understand. This issue was described multiple times over the years, some of the most notable discussions include:
+
+- [Rust Internals "Notes on partial borrow"](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020).
+- [The Rustonomicon "Splitting Borrows"](https://doc.rust-lang.org/nomicon/borrow-splitting.html).
+- [Niko Matsakis Blog Post "After NLL: Interprocedural conflicts"](https://smallcultfollowing.com/babysteps/blog/2018/11/01/after-nll-interprocedural-conflicts/).
+- [Afternoon Rusting "Multiple Mutable References"](https://oribenshir.github.io/afternoon_rusting/blog/mutable-reference).
+- [Partial borrows Rust RFC](https://github.com/rust-lang/rfcs/issues/1215#issuecomment-333316998).
+- [HackMD "My thoughts on (and need for) partial borrows"](https://hackmd.io/J5aGp1ptT46lqLmPVVOxzg?view).
+
+<br/>
+
+# 🖋️ `borrow::Partial` derive macro
+
+This crate provides the `borrow::Partial` derive macro, which lets your structs be borrowed partially.
+
+```rust
+#[derive(borrow::Partial)]
+#[module(crate)]
+pub struct Ctx {
+    pub geometry: GeometryCtx,
+    pub material: MaterialCtx,
+    pub mesh:     MeshCtx,
+    pub scene:    SceneCtx,
+}
+```
+
+The most important code that this macro generates is:
+
+```rust
+pub struct CtxRef<Geometry, Material, Mesh, Scene> {
+    pub geometry: Geometry,
+    pub material: Material,
+    pub mesh:     Mesh,
+    pub scene:    Scene,
+}
+
+impl Ctx {
+    pub fn as_refs_mut(&mut self) -> 
+        CtxRef<
+            &mut GeometryCtx,
+            &mut MaterialCtx,
+            &mut MeshCtx,
+            &mut SceneCtx,
+        > 
+    { /* ... */ }
+}
+```
+
+All partial borrows of the `Ctx` struct will be represented as `&mut CtxRef<...>` with type parameters instantiated to one of `&T`, `&mut T`, or `Hidden<T>`. The `Hidden<T>` type is used to mark fields inaccessible in the current borrow.
+
+### The `#[module(...)]` Attribute
+
+Please note the usage of the `#[module(...)]` attribute, which specifies the path to the module where the macro is invoked. This attribute is necessary because Rust does not allow procedural macros to automatically detect the path of the module they are used in.
+
+If you intend to use the generated macro from another crate, avoid using the `crate::` prefix in the `#[module(...)]` attribute. Instead, refer to your current crate by its name, for example: `#[module(my_crate::data)]` and add `extern crate self as my_crate;` to your `lib.rs` / `main.rs`.
+
+<br/>
+
+# 🖋️ `borrow::partial` (`p!`) macro
+
+This crate provides the `borrow::partial` macro, which we recommend importing under a shorter alias `p` for concise syntax. The macro allows you to parameterize borrows similarly to how you parameterize types. Let's see how the macro expansion works:
+
+```rust
+use borrow::partial as p;
+
+// Given:
+fn test(ctx: p!(&<mesh, mut scene> Ctx)) { /* ... */ }
+
+// It will expand to:
+fn test(ctx: &mut p!(<mesh, mut scene> Ctx)) { /* ... */ }
+
+// Which will expand to:
+fn test(ctx: 
+    &mut CtxRef<
+       Hidden<GeometryCtx>, 
+       Hidden<MaterialCtx>, 
+       &MeshCtx, 
+       &mut SceneCtx
+    >
+) { /* ... */ }
+```
+
+### Supported Syntax 
+The macro implements the syntax proposed in [Rust Internals "Notes on partial borrow"](https://internals.rust-lang.org/t/notes-on-partial-borrows/20020), extended with utilities for increased expressiveness:
+
+
+
+1. **Field References**  
+   You can parameterize a reference by providing field names this reference should contain.
+
+   ```rust
+   // Contains:
+   // 1. Immutable reference to the 'mesh' field.
+   // 2. Mutable reference to the 'scene' field.
+   fn test(ctx: p!(&<geometry, mut material> Ctx)) { /* ... */ }
+   ```
+
+2. **Field Selectors**  
+   You can use `*` to include all fields and `!` to exclude fields. Later selectors override previous ones.
+
+   ```rust
+   // Contains:
+   // 1. Mutable references to all, but 'mesh' and 'scene' fields.
+   // 2. Immutable reference to the 'mesh' field.
+   fn test(ctx: p!(&<mut *, mesh, !scene> Ctx)) { /* ... */ }
+   ```
+
+3. **Lifetime Annotations**  
+   You can specify lifetimes for each reference. If a lifetime is not provided, it defaults to `'_`. You can override the default lifetime (`'_`) by providing it as the first argument.
+
+   ```rust
+   // Contains:
+   // 1. References with the 'b lifetime to all but the 'mesh' fields.
+   // 2. Reference with the 'c lifetime to the 'mesh' field.
+   //
+   // Due to explicit partial reference lifetime 'a, the inferred
+   // lifetime dependencies are 'a:'b and 'a:'c.
+   fn test<'a, 'b, 'c>(ctx: p!(&'a <'b *, 'c mesh> Ctx)) { /* ... */ }
+   
+   // Contains:
+   // 1. Reference with the 't lifetime to the 'geometry' field.
+   // 2. Reference with the 't lifetime to the 'material' field.
+   // 3. Reference with the 'm lifetime to the 'mesh' field.
+   type GlyphCtx<'t, 'm> = p!(<'t, geometry, material, 'm mesh> Ctx);
+   ```
+
+
+<br/>
+
+
+
+<br/>
+
+
+
+
+
+5. **Flexible Macro Expansion**: Please note that `p!(&<...>MyStruct)` always expands to `&mut p!(<...>MyStruct)`, which expands to `&mut MyStructRef<...>`, a generated struct containing references to fields. This allows for concise type alias syntax.
+
+   ```rust
+   type RenderCtx<'t> = p!(<'t, scene> Ctx);
+   type GlyphCtx<'t> = p!(<'t, geometry, material, mesh> Ctx);
+   type GlyphRenderCtx<'t> = Union<RenderCtx<'t>, GlyphCtx<'t>>;
+   
+   fn test(ctx: &mut GlyphRenderCtx) {
+       // ...
+   }
+   ```
+
+
+
 
 <br/>
 

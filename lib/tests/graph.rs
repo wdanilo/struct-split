@@ -15,20 +15,26 @@ type EdgeId = usize;
 #[derive(Debug)]
 struct Node {
     outputs: Vec<EdgeId>,
-    inputs: Vec<EdgeId>,
+    inputs:  Vec<EdgeId>,
 }
 
 #[derive(Debug)]
 struct Edge {
     from: Option<NodeId>,
-    to: Option<NodeId>,
+    to:   Option<NodeId>,
+}
+
+#[derive(Debug)]
+struct Group {
+    nodes: Vec<NodeId>,
 }
 
 #[derive(Debug, PartialBorrow)]
 #[module(crate)]
 struct Graph {
-    nodes: Vec<Node>,
-    edges: Vec<Edge>,
+    nodes:  Vec<Node>,
+    edges:  Vec<Edge>,
+    groups: Vec<Group>,
 }
 
 // =============
@@ -51,7 +57,7 @@ fn detach_all_nodes(graph: p!(&<mut *> Graph)) {
     // The `graph2` variable has a type of `p!(&<mut *, !nodes> Graph)`.
     let (nodes, graph2) = graph.extract_nodes();
     for node in nodes {
-        detach_node(graph2, node);
+        detach_node(graph2.partial_borrow(), node);
     }
 }
 
@@ -73,6 +79,7 @@ fn test() {
             Edge { from: Some(1), to: Some(2) }, // Edge 1
             Edge { from: Some(2), to: Some(0) }, // Edge 2
         ],
+        groups: vec![]
     };
 
     detach_all_nodes(&mut graph.as_refs_mut());
