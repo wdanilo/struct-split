@@ -17,8 +17,8 @@ pub use borrow_macro::*;
 
 pub mod traits {
     pub use super::Acquire as _;
-    pub use super::PartialBorrow as _;
-    pub use super::PartialBorrowHelper as _;
+    pub use super::Partial as _;
+    pub use super::PartialHelper as _;
     pub use super::RefCast as _;
     pub use super::AsRefs as _;
     pub use super::AsRefsHelper as _;
@@ -121,17 +121,17 @@ T: SplitFields<T2>, H: Acquire<H2> {
 type SplitFieldsRest<T, Target> = <T as SplitFields<Target>>::Rest;
 
 
-// =====================
-// === PartialBorrow ===
-// =====================
+// ===============
+// === Partial ===
+// ===============
 
-/// Helper trait for [`PartialBorrow`]. This trait is automatically implemented by the [`partial_borrow!`]
+/// Helper trait for [`Partial`]. This trait is automatically implemented by the [`partial_borrow!`]
 /// macro. It is used to provide Rust type inferencer with additional type information. In particular, it
 /// is used to tell that any partial borrow of a struct results in the same struct type, but parametrized
 /// differently. It is needed for Rust to correctly infer target types for associated methods, like:
 ///
 /// ```ignore
-/// #[derive(PartialBorrow)]
+/// #[derive(Partial)]
 /// #[module(crate)]
 /// pub struct Ctx {
 ///     pub geometry: GeometryCtx,
@@ -148,22 +148,22 @@ type SplitFieldsRest<T, Target> = <T as SplitFields<Target>>::Rest;
 ///     ctx.partial_borrow().my_method();
 /// }
 /// ```
-pub trait PartialBorrowInferenceGuide<Target> {}
+pub trait PartialInferenceGuide<Target> {}
 
 /// Implementation of partial field borrowing. The `Target` type parameter specifies the required
 /// partial borrow representation, such as `p!(<mut field1, field2>MyStruct)`.
 ///
 /// This trait is automatically implemented for all partial borrow representations.
-pub trait PartialBorrow<Target> : PartialBorrowInferenceGuide<Target> {
+pub trait Partial<Target> : PartialInferenceGuide<Target> {
     type Rest;
 
-    /// See the documentation of [`PartialBorrowHelper::partial_borrow`].
+    /// See the documentation of [`PartialHelper::partial_borrow`].
     #[inline(always)]
     fn partial_borrow_impl(&mut self) -> &mut Target {
         unsafe { &mut *(self as *mut _ as *mut _) }
     }
 
-    /// See the documentation of [`PartialBorrowHelper::split`].
+    /// See the documentation of [`PartialHelper::split`].
     #[inline(always)]
     fn split_impl(&mut self) -> (&mut Target, &mut Self::Rest) {
         let a = unsafe { &mut *(self as *mut _ as *mut _) };
@@ -172,8 +172,8 @@ pub trait PartialBorrow<Target> : PartialBorrowInferenceGuide<Target> {
     }
 }
 
-impl<Source, Target> PartialBorrow<Target> for Source where
-Source: PartialBorrowInferenceGuide<Target>,
+impl<Source, Target> Partial<Target> for Source where
+Source: PartialInferenceGuide<Target>,
 Source: HasFields,
 Target: HasFields,
 Fields<Source>: SplitFields<Fields<Target>>,
@@ -181,35 +181,35 @@ Target: ReplaceFields<SplitFieldsRest<Fields<Source>, Fields<Target>>> {
     type Rest = ReplacedFields<Target, SplitFieldsRest<Fields<Source>, Fields<Target>>>;
 }
 
-/// Helper for [`PartialBorrow`]. This trait is automatically implemented for all types.
-impl<Target> PartialBorrowHelper for Target {}
-pub trait PartialBorrowHelper {
+/// Helper for [`Partial`]. This trait is automatically implemented for all types.
+impl<Target> PartialHelper for Target {}
+pub trait PartialHelper {
     /// Borrow fields from this partial borrow for the `Target` partial borrow, like
     /// `ctx.partial_borrow::<p!(<mut scene>Ctx)>()`.
     #[inline(always)]
     fn partial_borrow<Target>(&mut self) -> &mut Target
-    where Self: PartialBorrowNotEq<Target> { self.partial_borrow_impl() }
+    where Self: PartialNotEq<Target> { self.partial_borrow_impl() }
 
     /// Borrow fields from this partial borrow for the `Target` partial borrow, like
     /// `ctx.partial_borrow::<p!(<mut scene>Ctx)>()`.
     #[inline(always)]
     fn partial_borrow_or_eq<Target>(&mut self) -> &mut Target
-    where Self: PartialBorrow<Target> { self.partial_borrow_impl() }
+    where Self: Partial<Target> { self.partial_borrow_impl() }
 
     /// Split this partial borrow into the `Target` partial borrow and the remaining fields, like
     /// `let (scene, ctx2) = ctx.split::<p!(<mut scene>Ctx)>()`.
     #[inline(always)]
     fn split<Target>(&mut self) -> (&mut Target, &mut Self::Rest)
-    where Self: PartialBorrow<Target> { self.split_impl() }
+    where Self: Partial<Target> { self.split_impl() }
 }
 
 
-// ==========================
-// === PartialBorrowNotEq ===
-// ==========================
+// ====================
+// === PartialNotEq ===
+// ====================
 
-pub trait PartialBorrowNotEq<Target> : PartialBorrow<Target> + NotEq<Target> {}
-impl<Target, T> PartialBorrowNotEq<Target> for T where T: PartialBorrow<Target> + NotEq<Target> {}
+pub trait PartialNotEq<Target> : Partial<Target> + NotEq<Target> {}
+impl<Target, T> PartialNotEq<Target> for T where T: Partial<Target> + NotEq<Target> {}
 
 
 // =============
@@ -301,10 +301,10 @@ macro_rules! lifetime_chooser {
 }
 
 #[macro_export]
-macro_rules! partial_borrow {
-    (& $lt:lifetime $($ts:tt)*)       => { & $lt mut $crate::partial_borrow! { $($ts)* } };
-    (& $($ts:tt)*)                    => { &     mut $crate::partial_borrow! { $($ts)* } };
-    (< $($ts:tt)*)                    => {           $crate::partial_borrow! { @ [] $($ts)* } };
+macro_rules! partial {
+    (& $lt:lifetime $($ts:tt)*)       => { & $lt mut $crate::partial! { $($ts)* } };
+    (& $($ts:tt)*)                    => { &     mut $crate::partial! { $($ts)* } };
+    (< $($ts:tt)*)                    => {           $crate::partial! { @ [] $($ts)* } };
     (@ [$($xs:tt)*] > $t:ident)       => { $t! { $($xs)* } };
-    (@ [$($xs:tt)*] $t:tt $($ts:tt)*) => { $crate::partial_borrow! { @ [$($xs)* $t] $($ts)* } };
+    (@ [$($xs:tt)*] $t:tt $($ts:tt)*) => { $crate::partial! { @ [$($xs)* $t] $($ts)* } };
 }

@@ -1,5 +1,3 @@
-use borrow::PartialBorrow;
-
 // ============
 // === Data ===
 // ============
@@ -53,7 +51,7 @@ pub struct SceneCtx {
 // === Root Registry ===
 // =====================
 
-#[derive(Debug, Default, PartialBorrow)]
+#[derive(Debug, Default, borrow::Partial)]
 #[module(crate::data)]
 pub struct Ctx {
     pub geometry: GeometryCtx,

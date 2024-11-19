@@ -47,7 +47,7 @@ fn extract_module_attr(input: &DeriveInput) -> Path {
 ///     scene: SceneCtx,
 /// }
 /// ```
-#[proc_macro_derive(PartialBorrow, attributes(module))]
+#[proc_macro_derive(Partial, attributes(module))]
 pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
     let lib = crate_name();
     let input = parse_macro_input!(input as DeriveInput);
@@ -90,7 +90,7 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
     // Generates:
     // impl<geometry_target, material_target, mesh_target, scene_target,
     //      geometry,        material,        mesh,        scene>
-    // PartialBorrowInferenceGuide<
+    // PartialInferenceGuide<
     //       CtxRef<geometry_target, material_target, mesh_target, scene_target>
     // > for CtxRef<geometry,        material,        mesh,        scene> {}
     let impl_inference_guide = {
@@ -98,7 +98,7 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
         quote! {
             #[allow(non_camel_case_types)]
             impl<#(#params,)* #(#target_params,)*>
-            #lib::PartialBorrowInferenceGuide<#ref_struct_ident<#(#target_params,)*>>
+            #lib::PartialInferenceGuide<#ref_struct_ident<#(#target_params,)*>>
             for #ref_struct_ident<#(#params,)*> {}
         }
     };
@@ -330,9 +330,9 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
     // 't4: 't3
     // {
     //     pub fn extract_geometry(&'t1 mut self)
-    //         -> (&'t2 mut GeometryCtx, &'t3 mut <Self as PartialBorrow<Ctx!['t4, mut geometry]>>::Rest)
+    //         -> (&'t2 mut GeometryCtx, &'t3 mut <Self as Partial<Ctx!['t4, mut geometry]>>::Rest)
     //     where geometry: Acquire<&'t4 mut GeometryCtx> {
-    //         let (a, b) = <Self as PartialBorrow<Ctx! ['t4, mut geometry]>>::split_impl(self);
+    //         let (a, b) = <Self as Partial<Ctx! ['t4, mut geometry]>>::split_impl(self);
     //         (a.geometry, b)
     //     }
     //
@@ -344,9 +344,9 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
             let name = Ident::new(&format!("extract_{field}"), field.span());
             quote! {
                 #[inline(always)]
-                pub fn #name(&'_t1 mut self) -> (&'_t2 mut #ty, &'_t3 mut <Self as #lib::PartialBorrow<#struct_ident!['_t4, mut #field]>>::Rest)
+                pub fn #name(&'_t1 mut self) -> (&'_t2 mut #ty, &'_t3 mut <Self as #lib::Partial<#struct_ident!['_t4, mut #field]>>::Rest)
                 where #field: #lib::Acquire<&'_t4 mut #ty> {
-                    let (a, b) = <Self as #lib::PartialBorrow<#struct_ident!['_t4, mut #field]>>::split_impl(self);
+                    let (a, b) = <Self as #lib::Partial<#struct_ident!['_t4, mut #field]>>::split_impl(self);
                     (a.#field, b)
                 }
             }

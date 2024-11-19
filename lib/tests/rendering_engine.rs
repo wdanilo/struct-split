@@ -4,7 +4,7 @@ mod data;
 
 use data::Ctx;
 use data::CtxRef;
-use borrow::{partial_borrow as p, PartialBorrowInferenceGuide};
+use borrow::partial as p;
 
 use borrow::traits::*;
 use borrow::Union;

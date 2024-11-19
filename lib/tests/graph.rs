@@ -1,8 +1,7 @@
 #![allow(dead_code)]
 
 use std::vec::Vec;
-use borrow::PartialBorrow;
-use borrow::partial_borrow as p;
+use borrow::partial as p;
 use borrow::traits::*;
 
 // ============
@@ -29,7 +28,11 @@ struct Group {
     nodes: Vec<NodeId>,
 }
 
-#[derive(Debug, PartialBorrow)]
+// =============
+// === Graph ===
+// =============
+
+#[derive(Debug, borrow::Partial)]
 #[module(crate)]
 struct Graph {
     nodes:  Vec<Node>,
@@ -67,7 +70,8 @@ fn detach_all_nodes(graph: p!(&<mut *> Graph)) {
 
 #[test]
 fn test() {
-    // 0 -> 1 -> 2 -> 0
+    // node0 -----> node1 -----> node2 -----> node0
+    //       edge0        edge1        edge2
     let mut graph = Graph {
         nodes: vec![
             Node { outputs: vec![0], inputs: vec![2] }, // Node 0

@@ -1,6 +1,6 @@
 use std::vec::Vec;
-use borrow::PartialBorrow;
-use borrow::partial_borrow as p;
+use borrow::partial as p;
+use borrow::traits::*;
 
 
 // ============
@@ -22,11 +22,21 @@ struct Edge {
     to: Option<NodeId>,
 }
 
-#[derive(Debug, PartialBorrow)]
+#[derive(Debug)]
+struct Group {
+    nodes: Vec<NodeId>,
+}
+
+// =============
+// === Graph ===
+// =============
+
+#[derive(Debug, borrow::Partial)]
 #[module(crate)]
 struct Graph {
     nodes: Vec<Node>,
     edges: Vec<Edge>,
+    groups: Vec<Group>,
 }
 
 
@@ -38,7 +48,7 @@ impl p!(<mut *> Graph) {
     fn detach_all_nodes(&mut self) {
         let (nodes, self2) = self.extract_nodes();
         for node in nodes {
-            self2.detach_node(node);
+            self2.partial_borrow().detach_node(node);
         }
     }
 }
@@ -61,7 +71,8 @@ impl p!(<mut edges> Graph) {
 
 #[test]
 fn test() {
-    // 0 -> 1 -> 2 -> 0
+    // node0 -----> node1 -----> node2 -----> node0
+    //       edge0        edge1        edge2
     let mut graph = Graph {
         nodes: vec![
             Node { outputs: vec![0], inputs: vec![2] }, // Node 0
@@ -73,6 +84,7 @@ fn test() {
             Edge { from: Some(1), to: Some(2) }, // Edge 1
             Edge { from: Some(2), to: Some(0) }, // Edge 2
         ],
+        groups: vec![],
     };
 
     graph.as_refs_mut().detach_all_nodes();
