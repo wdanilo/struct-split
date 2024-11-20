@@ -143,13 +143,13 @@ The macro implements the syntax proposed in [Rust Internals "Notes on partial bo
    ```
 
 2. **Field Selectors**  
-   You can use `..` to include all fields and `!` to exclude fields. Later selectors override previous ones.
+   You can use `*` to include all fields and `!` to exclude fields. Later selectors override previous ones.
 
    ```rust
    // Contains:
    // 1. Mutable references to all, but 'edges' and 'groups' fields.
    // 2. Immutable reference to the 'edges' field.
-   fn test(graph: p!(&<mut .., edges, !groups> Graph)) { /* ... */ }
+   fn test(graph: p!(&<mut *, edges, !groups> Graph)) { /* ... */ }
    ```
 
 3. **Lifetime Annotations**  
@@ -162,7 +162,7 @@ The macro implements the syntax proposed in [Rust Internals "Notes on partial bo
    //
    // Due to explicit partial reference lifetime 'a, the inferred
    // lifetime dependencies are 'a:'b and 'a:'c.
-   fn test<'a, 'b, 'c>(graph: p!(&'a <'b .., 'c edges> Graph)) { /* ... */ }
+   fn test<'a, 'b, 'c>(graph: p!(&'a <'b *, 'c edges> Graph)) { /* ... */ }
    
    // Contains:
    // 1. Reference with the 't lifetime to the 'nodes' field.

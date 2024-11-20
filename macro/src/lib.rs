@@ -307,10 +307,10 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
                 #(#patterns_ref_mut)*
                 #(#patterns_ref_none)*
                 (@ $lt:lifetime [$([$($ts:tt)*])*] [$(,)*]) => { #module::#ref_struct_ident<$($($ts)*),*> };
-                (@ $($ts:tt)*) => { error {$($ts)*} };
+                (@ $($ts:tt)*) => { MACRO_EXPANSION_ERROR!($($ts)*) };
 
-                ($lt:lifetime $($ts:tt)*) => {
-                    $crate::#struct_ident! {@ $lt [#all_hidden] [$($ts)*]}
+                ($lt:lifetime, $($ts:tt)*) => {
+                    $crate::#struct_ident! {@ $lt [#all_hidden] [, $($ts)*]}
                 };
                 ($($ts:tt)*) => {
                     $crate::#struct_ident! {@ '_ [#all_hidden] [,$($ts)*]}

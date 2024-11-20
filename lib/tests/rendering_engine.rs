@@ -3,13 +3,10 @@
 mod data;
 
 use data::Ctx;
-use data::CtxRef;
 use borrow::partial as p;
 
 use borrow::traits::*;
 use borrow::Union;
-use borrow::Hidden;
-use crate::data::{GeometryCtx, MaterialCtx, MeshCtx, SceneCtx};
 
 // =============
 // === Tests ===
@@ -43,18 +40,3 @@ fn render_scene(_ctx: p!(&<mesh, mut geometry, mut material> Ctx), _mesh: usize)
 type RenderCtx<'t> = p!(<'t, scene> Ctx);
 type GlyphCtx<'t> = p!(<'t, geometry, material, mesh> Ctx);
 type GlyphRenderCtx<'t> = Union<RenderCtx<'t>, GlyphCtx<'t>>;
-
-// pub struct Ctx {
-//     pub geometry: GeometryCtx,
-//     pub material: MaterialCtx,
-//     pub mesh: MeshCtx,
-//     pub scene: SceneCtx,
-// }
-
-impl p!(<mut geometry, mut material>Ctx) {
-    fn foo(&mut self){}
-}
-
-fn test(ctx: p!(&<mut *> Ctx)) {
-    ctx.partial_borrow().foo();
-}
