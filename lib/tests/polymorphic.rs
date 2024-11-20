@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use borrow::partial as p;
 use borrow::traits::*;
 use borrow::*;
@@ -67,32 +69,17 @@ pub struct Ctx<'v, V: Debug> {
     pub scene: SceneCtx,
 }
 
-fn render_pass1<'v2, V2: Debug>(ctx: p!(&<mut *> Ctx<'v2, V2>)) {
-    // let x: usize = ctx.extract_version();
-    // fn render_pass1<'v2, V2: Debug>(ctx: p!(&<mut *> Ctx<'v2, V2>)) {
-    // fn render_pass1<'v2, V2: Debug>(ctx: &mut Ctx![['v2, V2] mut *]) {
-    // let (scene, ctx2) = ctx.extract_scene();
-    // for scene in &scene.data {
-    //     for mesh in &scene.meshes {
-    //         render_scene(ctx2.partial_borrow(), *mesh)
-    //     }
-    // }
+fn render_pass1<'v, V: Debug>
+(ctx: p!(&<mut *> Ctx<'v, V>)) {
+    let (scene, ctx2) = ctx.extract_scene();
+    for scene in &scene.data {
+        for mesh in &scene.meshes {
+            render_scene(ctx2.partial_borrow(), *mesh)
+        }
+    }
 }
 
-
-
-
-#[allow(non_camel_case_types)]
-impl<'t, version, geometry, material, mesh, scene>
-    CtxRef<version, geometry, material, mesh, scene>
-where
-{
-    #[inline(always)]
-    pub fn extract_version2(&'t mut self) -> (
-        <version as RefFlatten<'t>>::Output,
-        &'t mut CtxRef<Acquired<version, version>, geometry, material, mesh, scene>
-    ) where version: Acquire<version> + RefFlatten<'t> {
-        let rest = unsafe { &mut *(self as *mut _ as *mut _) };
-        (self.version.ref_flatten(), rest)
-    }
+fn render_scene<'v, V: Debug>
+(_ctx: p!(&<mesh, mut geometry, mut material> Ctx<'v, V>), _mesh: usize) {
+    // ...
 }

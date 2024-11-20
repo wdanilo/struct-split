@@ -440,7 +440,7 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
         let idents_str = field_idents.iter().map(|t| t.to_string()).collect_vec();
         let fns = idents_str.iter().map(|field_str| {
             let params = idents_str.iter().map(|i| {
-                if(i == field_str) {
+                if i == field_str {
                     let ident = Ident::new(i, Span::call_site());
                     quote!{#lib::Acquired<#ident, #ident>}
                 } else {
@@ -470,7 +470,6 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
         }
     };
 
-
     let out = quote! {
         #ref_struct
         #impl_inference_guide
@@ -483,6 +482,6 @@ pub fn partial_borrow_derive(input: TokenStream) -> TokenStream {
         #impl_extract_fields
     };
 
-    println!(">>> {}", out);
+    // println!(">>> {}", out);
     TokenStream::from(out)
 }
