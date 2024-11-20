@@ -3,10 +3,9 @@
 mod data;
 
 use data::Ctx;
-use borrow::partial_borrow as p;
+use borrow::partial as p;
 
 use borrow::traits::*;
-use borrow::UnifyImpl;
 use borrow::Union;
 
 // =============
@@ -16,8 +15,7 @@ use borrow::Union;
 #[test]
 fn test_types() {
     let mut ctx = Ctx::mock();
-    render_pass1(ctx.as_refs_mut().partial_borrow());
-    render_pass1_explicit(ctx.as_refs_mut().partial_borrow());
+    render_pass1(&mut ctx.as_refs_mut());
 }
 
 fn render_pass1(ctx: p!(&<mut *> Ctx)) {
@@ -27,19 +25,8 @@ fn render_pass1(ctx: p!(&<mut *> Ctx)) {
             render_scene(ctx2.partial_borrow(), *mesh)
         }
     }
-    render_pass2(ctx.partial_borrow());
+    render_pass2(ctx);
     render_pass3(ctx.partial_borrow());
-}
-
-fn render_pass1_explicit(ctx: p!(&<mut *> Ctx)) {
-    let (scene_ctx, ctx2) = ctx.split::<p!(<mut scene> Ctx)>();
-    for scene in &scene_ctx.scene.data {
-        for mesh in &scene.meshes {
-            render_scene(ctx2.partial_borrow(), *mesh)
-        }
-    }
-    let mut merged_ctx = ctx2.union(scene_ctx);
-    render_pass2(&mut merged_ctx);
 }
 
 fn render_pass2(_ctx: p!(&<mut *> Ctx)) {}
